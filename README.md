@@ -101,8 +101,6 @@ While not a primary goal, other cameras based on the Ambarella SoCs (like older 
 
 ### iOS
 
-*Builds for iOS are currently not a priority due to limited development time. At this stage, the project will most likely not compile. This will be addressed once all the core features are implemented.*
-
 #### Prerequisites
 
 - **macOS** with **Xcode** (and Xcode Command Line Tools)
