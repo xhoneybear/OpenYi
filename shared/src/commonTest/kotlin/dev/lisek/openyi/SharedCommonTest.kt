@@ -11,7 +11,7 @@ class SharedCommonTest {
     @Test
     fun testParseSessionStartResponse() {
         val json = """{"rval":0,"msg_id":257,"param":1}"""
-        val response = CameraResponse.parse(json)
+        val response = CameraPacket.parse(json)
 
         assertEquals(257, response.msgId)
         assertEquals(0, response.rval)
@@ -23,7 +23,7 @@ class SharedCommonTest {
     @Test
     fun testParseGetAllSettingsResponse() {
         val json = """{"rval":0,"msg_id":3,"param":[{"camera_clock":"2026-10-25 04:00:00"},{"video_quality":"S.Fine"}]}"""
-        val response = CameraResponse.parse(json)
+        val response = CameraPacket.parse(json)
 
         assertEquals(3, response.msgId)
         assertEquals(0, response.rval)
@@ -34,7 +34,7 @@ class SharedCommonTest {
     @Test
     fun testParseErrorResponse() {
         val json = """{"rval":-4,"msg_id":257}"""
-        val response = CameraResponse.parse(json)
+        val response = CameraPacket.parse(json)
 
         assertEquals(257, response.msgId)
         assertEquals(-4, response.rval)
@@ -45,7 +45,7 @@ class SharedCommonTest {
     @Test
     fun testParseNotification() {
         val json = """{"msg_id":7,"type":"battery","param":"100"}"""
-        val response = CameraResponse.parse(json)
+        val response = CameraPacket.parse(json)
 
         assertEquals(7, response.msgId)
         assertEquals("battery", response.type)
@@ -130,17 +130,17 @@ class SharedCommonTest {
         }
 
         // Test battery signal
-        val batteryResp = CameraResponse.parse("""{"msg_id":7,"type":"battery","param":"85"}""")
+        val batteryResp = CameraPacket.parse("""{"msg_id":7,"type":"battery","param":"85"}""")
         dispatcher.onSignal(batteryResp.type!!, batteryResp.strParam, batteryResp)
         assertEquals("85", batteryParam)
 
         // Test photo_taken signal
-        val photoResp = CameraResponse.parse("""{"msg_id":7,"type":"photo_taken","param":"/tmp/fuse_d/DCIM/100MEDIA/YDXJ0001.jpg"}""")
+        val photoResp = CameraPacket.parse("""{"msg_id":7,"type":"photo_taken","param":"/tmp/fuse_d/DCIM/100MEDIA/YDXJ0001.jpg"}""")
         dispatcher.onSignal(photoResp.type!!, photoResp.strParam, photoResp)
         assertEquals("/tmp/fuse_d/DCIM/100MEDIA/YDXJ0001.jpg", photoTakenParam)
 
         // Test custom signal
-        val customResp = CameraResponse.parse("""{"type":"custom_mode","param":"timelapse"}""")
+        val customResp = CameraPacket.parse("""{"type":"custom_mode","param":"timelapse"}""")
         dispatcher.onSignal(customResp.type!!, customResp.strParam, customResp)
         assertEquals("custom_mode", customType)
         assertEquals("timelapse", customParam)
