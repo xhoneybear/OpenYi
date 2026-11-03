@@ -12,11 +12,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -54,49 +52,28 @@ enum class BatteryLevel(val icon: ImageVector, val chargingIcon: ImageVector) {
     B_100(MaterialSymbols.RoundedFilled.Battery_full, MaterialSymbols.RoundedFilled.Battery_full),
     UNKNOWN(MaterialSymbols.RoundedFilled.Battery_unknown, MaterialSymbols.RoundedFilled.Battery_unknown);
     
-    fun classify(level: Int): BatteryLevel {
-        return when {
-            level == 100 -> B_100
-            level > 90 -> B_90
-            level > 80 -> B_80
-            level > 60 -> B_60
-            level > 50 -> B_50
-            level > 30 -> B_30
-            level > 20 -> B_20
-            level >= 0 -> B_0
-            else -> UNKNOWN
+    companion object {
+        fun fromLevel(level: Int): BatteryLevel {
+            return when {
+                level == 100 -> B_100
+                level > 90 -> B_90
+                level > 80 -> B_80
+                level > 60 -> B_60
+                level > 50 -> B_50
+                level > 30 -> B_30
+                level > 20 -> B_20
+                level >= 0 -> B_0
+                else -> UNKNOWN
+            }
         }
     }
 }
 
 @Composable
 fun Overlay(cameraClient: CameraClient, playerState: RtspPlayerState) {
-    var battery: BatteryLevel by remember { mutableStateOf(BatteryLevel.UNKNOWN) }
-    var batteryLevel: String by remember { mutableStateOf("N/A") }
-    var charging: Boolean by remember { mutableStateOf(false) }
-
-    val dispatcher = remember {
-        object : CameraSignalDispatcher() {
-            override fun onBattery(param: String?) {
-                charging = false
-                batteryLevel = if (param.isNullOrEmpty()) "N/A" else "$param%"
-                battery = battery.classify(param?.toIntOrNull() ?: -1)
-            }
-            override fun onAdapter(param: String?) {
-                charging = true
-                batteryLevel = if (param.isNullOrEmpty()) "N/A" else "$param%"
-                battery = battery.classify(param?.toIntOrNull() ?: -1)
-            }
-            override fun onAdapterStatus(param: String?) {
-                charging = param == "1"
-            }
-        }
-    }
-
-    LaunchedEffect(cameraClient) {
-        cameraClient.signals.collect { signal ->
-            dispatcher.onSignal(signal.type, signal.param, signal.rawResponse)
-        }
+    val batteryInfo by cameraClient.batteryInfo.collectAsState()
+    val battery = remember(batteryInfo.level) {
+        BatteryLevel.fromLevel(batteryInfo.level)
     }
 
     Box(
@@ -111,12 +88,12 @@ fun Overlay(cameraClient: CameraClient, playerState: RtspPlayerState) {
             modifier = Modifier.align(Alignment.TopEnd)
         ) {
             Text(
-                text = batteryLevel,
+                text = batteryInfo.displayText,
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color.White
             )
             Icon(
-                imageVector = if (charging) battery.chargingIcon else battery.icon,
+                imageVector = if (batteryInfo.isCharging) battery.chargingIcon else battery.icon,
                 contentDescription = "Battery Icon",
                 tint = Color.White
             )

@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -77,6 +78,21 @@ data class CameraLogEntry(
     val level: CameraLogLevel,
     val message: String
 )
+
+data class BatteryInfo(
+    val level: Int = -1,
+    val isCharging: Boolean = false
+) {
+    val displayText: String
+        get() = if (level >= 0) "$level%" else "N/A"
+}
+
+sealed interface CameraConnectionState {
+    data object Disconnected : CameraConnectionState
+    data class Connecting(val host: String) : CameraConnectionState
+    data class Connected(val host: String, val token: Int?) : CameraConnectionState
+    data class Error(val message: String) : CameraConnectionState
+}
 
 /**
  * A classified signal / notification event received from the camera.
@@ -240,6 +256,28 @@ class CameraClient(
     private val _isConnected = MutableStateFlow(false)
     val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
 
+    private val _connectionState = MutableStateFlow<CameraConnectionState>(CameraConnectionState.Disconnected)
+    val connectionState: StateFlow<CameraConnectionState> = _connectionState.asStateFlow()
+
+    private val _batteryInfo = MutableStateFlow(BatteryInfo())
+    val batteryInfo: StateFlow<BatteryInfo> = _batteryInfo.asStateFlow()
+
+    private val _isRecording = MutableStateFlow(false)
+    val isRecording: StateFlow<Boolean> = _isRecording.asStateFlow()
+
+    private val _sdCardAlert = MutableStateFlow<String?>(null)
+    val sdCardAlert: StateFlow<String?> = _sdCardAlert.asStateFlow()
+
+    fun clearSdCardAlert() {
+        _sdCardAlert.value = null
+    }
+
+    private val _discoveryState = MutableStateFlow<DiscoveryState>(DiscoveryState.Idle)
+    val discoveryState: StateFlow<DiscoveryState> = _discoveryState.asStateFlow()
+
+    private val _isScanning = MutableStateFlow(false)
+    val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
+
     private val _currentToken = MutableStateFlow<Int?>(storage?.authToken?.toIntOrNull())
     val currentToken: StateFlow<Int?> = _currentToken.asStateFlow()
 
@@ -309,6 +347,7 @@ class CameraClient(
     private fun disconnectInternal() {
         val wasConnected = _isConnected.value
         _isConnected.value = false
+        _connectionState.value = CameraConnectionState.Disconnected
         readJob?.cancel()
         readJob = null
 
@@ -372,6 +411,33 @@ class CameraClient(
         val type = response.type
         if (type != null) {
             val param = response.strParam
+            when (type) {
+                "battery" -> {
+                    val lvl = param?.toIntOrNull() ?: _batteryInfo.value.level
+                    _batteryInfo.value = _batteryInfo.value.copy(level = lvl, isCharging = false)
+                }
+                "adapter" -> {
+                    val lvl = param?.toIntOrNull() ?: _batteryInfo.value.level
+                    _batteryInfo.value = _batteryInfo.value.copy(level = lvl, isCharging = true)
+                }
+                "adapter_status" -> {
+                    _batteryInfo.value = _batteryInfo.value.copy(isCharging = param == "1")
+                }
+                "sd_card_status" -> {
+                    if (param == "STORAGE_FULL") {
+                        _sdCardAlert.value = "SD card full. Please free up space."
+                    } else if (param == "LOW_SPEED_CARD") {
+                        _sdCardAlert.value = "SD card slow. Quality may be affected."
+                    }
+                }
+                "start_video_record" -> {
+                    _isRecording.value = true
+                }
+                "video_record_complete" -> {
+                    _isRecording.value = false
+                }
+            }
+
             val signal = CameraSignal(type, param, response)
             _signals.tryEmit(signal)
 
@@ -386,6 +452,66 @@ class CameraClient(
         } else if (genericPendingRequest != null) {
             genericPendingRequest?.complete(response)
             genericPendingRequest = null
+        }
+    }
+
+    suspend fun connectAndInitialize(
+        forceReconnect: Boolean = false,
+        explicitHost: String? = null
+    ): Result<String> = withContext(Dispatchers.Default) {
+        if (_isConnected.value && !forceReconnect) {
+            log(CameraLogLevel.INFO, "Already connected to $host:$port - reusing existing session.")
+            return@withContext Result.success(host)
+        }
+
+        if (forceReconnect) {
+            disconnect()
+        }
+
+        val targetHost: String
+        if (!explicitHost.isNullOrBlank()) {
+            targetHost = explicitHost
+        } else {
+            // Check if current/saved host is reachable first
+            val candidateHost = storage?.cameraHost ?: host
+            val fastProbeSuccess = CameraDiscovery.probeCamera(candidateHost, port = port, timeoutMs = 600, selector = selector)
+            if (fastProbeSuccess) {
+                targetHost = candidateHost
+            } else {
+                // Fall back to subnet discovery
+                _isScanning.value = true
+                try {
+                    val discovered = scanNetwork(
+                        cameraClient = this@CameraClient,
+                        storage = storage ?: AppStorage(),
+                        onScanState = { _discoveryState.value = it },
+                        onScanning = { _isScanning.value = it }
+                    )
+                    if (discovered == null) {
+                        val err = "No camera found on the local network."
+                        _connectionState.value = CameraConnectionState.Error(err)
+                        log(CameraLogLevel.WARN, err)
+                        return@withContext Result.failure(Exception(err))
+                    }
+                    targetHost = discovered
+                } finally {
+                    _isScanning.value = false
+                }
+            }
+        }
+
+        try {
+            _connectionState.value = CameraConnectionState.Connecting(targetHost)
+            connect(targetHost = targetHost)
+            val sessionResponse = startSession()
+            val token = sessionResponse.intParam ?: currentToken.value ?: 0
+            send(msgId = MSG_GET_ALL_SETTINGS, token = token)
+            _connectionState.value = CameraConnectionState.Connected(targetHost, token)
+            Result.success(targetHost)
+        } catch (e: Exception) {
+            val err = e.message ?: e::class.simpleName ?: e.toString()
+            _connectionState.value = CameraConnectionState.Error(err)
+            Result.failure(e)
         }
     }
 

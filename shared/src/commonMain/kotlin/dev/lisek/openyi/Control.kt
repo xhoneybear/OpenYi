@@ -83,27 +83,28 @@ fun Control() {
     var playerState by remember { mutableStateOf(RtspPlayerState.Disconnected) }
     var timer by remember { mutableStateOf(TimerDuration.OFF) }
     var recordMode by remember { mutableStateOf(false) }
-    var isRecording by remember { mutableStateOf(false) }
     var restartToken by remember { mutableStateOf(0) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    var sdCardMessage by remember { mutableStateOf<String?>(null) }
+    var localErrorMessage by remember { mutableStateOf<String?>(null) }
 
     val coroutineScope = rememberCoroutineScope()
-    val storage = remember { AppStorage() }
     val cameraClient = remember { CameraClient.shared }
     val isConnected by cameraClient.isConnected.collectAsState()
-    var isConnecting by remember { mutableStateOf(false) }
+    val connectionState by cameraClient.connectionState.collectAsState()
+    val isConnecting = connectionState is CameraConnectionState.Connecting
+    val isRecording by cameraClient.isRecording.collectAsState()
+    val sdCardMessage by cameraClient.sdCardAlert.collectAsState()
 
     val debugLogs = remember { mutableStateListOf<CameraLogEntry>() }
-    var scanState by remember { mutableStateOf<DiscoveryState>(DiscoveryState.Idle) }
-    var isScanning by remember { mutableStateOf(false) }
+    val scanState by cameraClient.discoveryState.collectAsState()
+    val isScanning by cameraClient.isScanning.collectAsState()
 
-    suspend fun doScan(): String? = scanNetwork(
-        cameraClient = cameraClient,
-        storage = storage,
-        onScanState = { scanState = it },
-        onScanning = { isScanning = it }
-    )
+    fun triggerReconnect() {
+        restartToken++
+        localErrorMessage = null
+        coroutineScope.launch {
+            cameraClient.connectAndInitialize(forceReconnect = true)
+        }
+    }
 
     LaunchedEffect(isRecording) {
         if (!isRecording) {
@@ -118,91 +119,9 @@ fun Control() {
         }
     }
 
-    LaunchedEffect(restartToken) {
-        // Setup signal dispatcher
-        cameraClient.signalDispatcher = object : CameraSignalDispatcher() {
-            override fun onSignal(type: String, param: String?, rawResponse: CameraPacket) {
-                super.onSignal(type, param, rawResponse)
-                println("Signal [$type]: param=$param")
-            }
-
-            override fun onBattery(param: String?) {
-                println("Battery status: param=$param")
-            }
-
-            override fun onAdapter(param: String?) {
-                println("Adapter status: param=$param")
-            }
-
-            override fun onSdCardStatus(param: String?) {
-                println("SD card status: param=$param")
-                if (param == "STORAGE_FULL") {
-                    sdCardMessage = "SD card full. Please free up space."
-                } else if (param == "LOW_SPEED_CARD") {
-                    sdCardMessage = "SD card slow. Quality may be affected."
-                }
-            }
-
-            override fun onPhotoTaken(param: String?) {
-                println("Photo taken: param=$param")
-            }
-
-            override fun onVideoRecordComplete(param: String?) {
-                println("Video record complete: param=$param")
-                isRecording = false
-            }
-
-            override fun onStartVideoRecord(param: String?) {
-                println("Start video record: param=$param")
-                isRecording = true
-            }
-
-            override fun onVfStart(param: String?) {
-                println("Viewfinder start: param=$param")
-            }
-
-            override fun onVfStop(param: String?) {
-                println("Viewfinder stop: param=$param")
-            }
-
-            override fun onCustomSignal(type: String, param: String?) {
-                println("Custom signal [$type]: param=$param")
-            }
-        }
-
-        isConnecting = true
-        withContext(Dispatchers.Default) {
-            val localIp = getLocalIp()
-
-            val targetHost = doScan()
-
-            if (targetHost == null) {
-                errorMessage = "No camera found on the local network."
-                isConnecting = false
-                return@withContext
-            }
-
-            try {
-                cameraClient.disconnect()
-                cameraClient.connect(targetHost = targetHost)
-                // Send packet {"msg_id":257,"token":0} and observe response
-                val sessionResponse = cameraClient.startSession()
-                println("Session 257 response: ${sessionResponse.toString()}")
-
-                // Send one with msg_id 3 and grab the response
-                val token = sessionResponse.intParam ?: cameraClient.currentToken.value ?: 0
-                val settingsResponse = cameraClient.send(msgId = 3, token = token)
-                println("msg_id 3 response: ${settingsResponse.toString()}")
-                errorMessage = null
-            } catch (e: Exception) {
-                e.printStackTrace()
-                val errorDetails = e.message ?: e::class.simpleName ?: e.toString()
-                println("Camera socket error: $errorDetails")
-                errorMessage = "Socket error: $errorDetails"
-            } finally {
-                isConnecting = false
-            }
-        }
+    // Connect on initial entry only if disconnected (reusing existing connection from Intro)
+    LaunchedEffect(Unit) {
+        cameraClient.connectAndInitialize(forceReconnect = false)
     }
 
     Scaffold(
@@ -361,11 +280,11 @@ fun Control() {
                             RtspPlayerState.Disconnected,
                             RtspPlayerState.Buffering,
                             RtspPlayerState.Playing -> {
-                                errorMessage = null
+                                localErrorMessage = null
                             }
                             RtspPlayerState.Idle,
                             RtspPlayerState.Error -> {
-                                errorMessage = if (state == RtspPlayerState.Error) {
+                                localErrorMessage = if (state == RtspPlayerState.Error) {
                                     "Unable to decode RTSP stream!"
                                 } else {
                                     "Connection lost. Dismiss to retry."
@@ -383,15 +302,15 @@ fun Control() {
                 }
                 Overlay(cameraClient, playerState)
             }
-            errorMessage?.let {
+            val activeErrorMessage = localErrorMessage ?: (connectionState as? CameraConnectionState.Error)?.message
+            activeErrorMessage?.let {
                 statusStrip(
                     icon = MaterialSymbols.RoundedFilled.Warning,
                     dismissIcon = MaterialSymbols.RoundedFilled.Refresh,
                     message = it,
                     tint = MaterialTheme.colorScheme.errorContainer,
                 ) {
-                    restartToken++
-                    errorMessage = null
+                    triggerReconnect()
                 }
             }
             sdCardMessage?.let {
@@ -401,7 +320,7 @@ fun Control() {
                     message = it,
                     tint = Color(255, 240, 215)
                 ) {
-                    sdCardMessage = null
+                    cameraClient.clearSdCardAlert()
                 }
             }
 
@@ -456,7 +375,7 @@ fun Control() {
                     }
 
                     IconButton(
-                        onClick = { restartToken++ },
+                        onClick = { triggerReconnect() },
                         enabled = !isConnecting,
                         modifier = Modifier.size(32.dp)
                     ) {
@@ -531,50 +450,6 @@ fun Control() {
             }
         }
     }
-}
-
-suspend fun scanNetwork(
-    cameraClient: CameraClient = CameraClient.shared,
-    storage: AppStorage = AppStorage(),
-    onScanState: (DiscoveryState) -> Unit = {},
-    onScanning: (Boolean) -> Unit = {}
-): String? {
-    val localIp = getLocalIp()
-    val localSubnet = localIp?.substringBeforeLast(".")
-    val hostSubnet = cameraClient.host.substringBeforeLast(".")
-
-    onScanning(true)
-    var target: String? = null
-    try {
-        if (localSubnet != null && localSubnet != hostSubnet) {
-            cameraClient.log(
-                CameraLogLevel.INFO,
-                "Subnet changed: last target was ${cameraClient.host}, device is at $localIp."
-            )
-        }
-        cameraClient.log(CameraLogLevel.INFO, "Checking local subnet for camera IP...")
-        CameraDiscovery.discover(storage = storage, stopOnFirst = true).collect { state ->
-            onScanState(state)
-            if (state is DiscoveryState.Finished) {
-                if (state.hasFoundCamera) {
-                    target = state.primaryIp!!
-                    cameraClient.updateHost(target)
-                    storage.cameraHost = target
-                    cameraClient.log(CameraLogLevel.INFO, "Found camera at $target. Connecting...")
-                } else {
-                    cameraClient.log(
-                        CameraLogLevel.WARN,
-                        "No camera responded. Ensure camera Wi-Fi is on and connected to this network."
-                    )
-                }
-            }
-        }
-    } catch (e: Exception) {
-        cameraClient.log(CameraLogLevel.ERROR, "Error while scanning network: ${e.message}")
-    } finally {
-        onScanning(false)
-    }
-    return target
 }
 
 @Composable

@@ -25,6 +25,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -228,37 +229,48 @@ fun Intro(
                     title = "Connect your camera",
                     content = {
                         val coroutineScope = rememberCoroutineScope()
-                        val storage = remember { AppStorage() }
                         val cameraClient = remember { CameraClient.shared }
-                        var discoveryState by remember { mutableStateOf<DiscoveryState>(DiscoveryState.Idle) }
-                        var isScanning by remember { mutableStateOf(false) }
+                        val connectionState by cameraClient.connectionState.collectAsState()
+                        val isConnected by cameraClient.isConnected.collectAsState()
+                        val isScanning by cameraClient.isScanning.collectAsState()
+                        val discoveryState by cameraClient.discoveryState.collectAsState()
+                        val batteryInfo by cameraClient.batteryInfo.collectAsState()
 
-                        val statusTitle = when (val state = discoveryState) {
-                            is DiscoveryState.Idle -> "Connection has not been checked."
-                            is DiscoveryState.Scanning -> "Scanning network..."
-                            is DiscoveryState.Finished -> if (state.hasFoundCamera) "Camera discovered!" else "Camera not found."
+                        val statusTitle = when {
+                            isConnected -> "Camera connected!"
+                            isScanning -> "Scanning network..."
+                            connectionState is CameraConnectionState.Connecting -> "Connecting..."
+                            connectionState is CameraConnectionState.Error -> "Connection failed"
+                            else -> "Connection has not been checked."
                         }
 
-                        val statusDescription = when (val state = discoveryState) {
-                            is DiscoveryState.Idle -> "Press the button below to automatically scan the network for your camera."
-                            is DiscoveryState.Scanning -> "Scanning ${state.currentIp.ifBlank { "local network" }} (${state.checkedCount}/${state.totalCount})..."
-                            is DiscoveryState.Finished -> if (state.hasFoundCamera) {
-                                "The camera is reachable at ${state.primaryIp}."
-                            } else {
-                                "Make sure your camera is powered on and in the same network as your device."
+                        val statusDescription = when {
+                            isConnected -> "Connected at ${cameraClient.host}. Battery: ${batteryInfo.displayText}."
+                            isScanning -> {
+                                val s = discoveryState as? DiscoveryState.Scanning
+                                if (s != null) {
+                                    "Scanning ${s.currentIp.ifBlank { "local network" }} (${s.checkedCount}/${s.totalCount})..."
+                                } else {
+                                    "Scanning local network..."
+                                }
                             }
+                            connectionState is CameraConnectionState.Connecting -> "Establishing session with camera at ${cameraClient.host}..."
+                            connectionState is CameraConnectionState.Error -> (connectionState as CameraConnectionState.Error).message
+                            else -> "Press the button below to connect and verify your camera."
                         }
 
-                        val statusColor = when (val state = discoveryState) {
-                            is DiscoveryState.Idle -> MaterialTheme.colorScheme.onSurfaceVariant
-                            is DiscoveryState.Scanning -> MaterialTheme.colorScheme.primary
-                            is DiscoveryState.Finished -> if (state.hasFoundCamera) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                        val statusColor = when {
+                            isConnected -> MaterialTheme.colorScheme.primary
+                            isScanning || connectionState is CameraConnectionState.Connecting -> MaterialTheme.colorScheme.primary
+                            connectionState is CameraConnectionState.Error -> MaterialTheme.colorScheme.error
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
                         }
 
-                        val statusBackgroundColor = when (val state = discoveryState) {
-                            is DiscoveryState.Idle -> MaterialTheme.colorScheme.surfaceVariant
-                            is DiscoveryState.Scanning -> MaterialTheme.colorScheme.surfaceVariant
-                            is DiscoveryState.Finished -> if (state.hasFoundCamera) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer
+                        val statusBackgroundColor = when {
+                            isConnected -> MaterialTheme.colorScheme.primaryContainer
+                            isScanning || connectionState is CameraConnectionState.Connecting -> MaterialTheme.colorScheme.surfaceVariant
+                            connectionState is CameraConnectionState.Error -> MaterialTheme.colorScheme.errorContainer
+                            else -> MaterialTheme.colorScheme.surfaceVariant
                         }
 
                         IntroText("Start your Yi Cam, press the Wi-Fi button, and connect to your camera's network.")
@@ -290,7 +302,7 @@ fun Intro(
                                 style = MaterialTheme.typography.bodyMedium,
                                 textAlign = TextAlign.Center
                             )
-                            if (discoveryState is DiscoveryState.Scanning) {
+                            if (isScanning && discoveryState is DiscoveryState.Scanning) {
                                 val scan = discoveryState as DiscoveryState.Scanning
                                 LinearProgressIndicator(
                                     progress = { scan.progress },
@@ -298,15 +310,10 @@ fun Intro(
                                 )
                             }
                             Button(
-                                enabled = !isScanning,
+                                enabled = !isScanning && connectionState !is CameraConnectionState.Connecting,
                                 onClick = {
                                     coroutineScope.launch {
-                                        scanNetwork(
-                                            cameraClient = cameraClient,
-                                            storage = storage,
-                                            onScanState = { state -> discoveryState = state },
-                                            onScanning = { scanning -> isScanning = scanning }
-                                        )
+                                        cameraClient.connectAndInitialize(forceReconnect = true)
                                     }
                                 }
                             ) {
@@ -318,10 +325,11 @@ fun Intro(
                                         .padding(end = 8.dp)
                                 )
                                 Text(
-                                    when (discoveryState) {
-                                        is DiscoveryState.Idle -> "Scan for camera"
-                                        is DiscoveryState.Scanning -> "Scanning..."
-                                        is DiscoveryState.Finished -> "Scan again"
+                                    when {
+                                        isScanning -> "Scanning..."
+                                        connectionState is CameraConnectionState.Connecting -> "Connecting..."
+                                        isConnected -> "Test again"
+                                        else -> "Connect camera"
                                     }
                                 )
                             }

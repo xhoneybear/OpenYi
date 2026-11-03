@@ -157,4 +157,17 @@ class SharedCommonTest {
         val invalid = CameraDiscovery.computeSubnetCandidates("invalid_ip")
         assertTrue(invalid.isEmpty())
     }
+
+    @Test
+    fun testBatteryInfoFormatting() {
+        val unknown = BatteryInfo()
+        assertEquals(-1, unknown.level)
+        assertFalse(unknown.isCharging)
+        assertEquals("N/A", unknown.displayText)
+
+        val charged = BatteryInfo(level = 85, isCharging = true)
+        assertEquals(85, charged.level)
+        assertTrue(charged.isCharging)
+        assertEquals("85%", charged.displayText)
+    }
 }

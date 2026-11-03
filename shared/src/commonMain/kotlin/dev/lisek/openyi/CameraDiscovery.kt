@@ -219,3 +219,50 @@ object CameraDiscovery {
         }
     }
 }
+
+/**
+ * Scans the local network for an accessible camera and updates the target host.
+ */
+suspend fun scanNetwork(
+    cameraClient: CameraClient = CameraClient.shared,
+    storage: AppStorage = AppStorage(),
+    onScanState: (DiscoveryState) -> Unit = {},
+    onScanning: (Boolean) -> Unit = {}
+): String? {
+    val localIp = getLocalIp()
+    val localSubnet = localIp?.substringBeforeLast(".")
+    val hostSubnet = cameraClient.host.substringBeforeLast(".")
+
+    onScanning(true)
+    var target: String? = null
+    try {
+        if (localSubnet != null && localSubnet != hostSubnet) {
+            cameraClient.log(
+                CameraLogLevel.INFO,
+                "Subnet changed: last target was ${cameraClient.host}, device is at $localIp."
+            )
+        }
+        cameraClient.log(CameraLogLevel.INFO, "Checking local subnet for camera IP...")
+        CameraDiscovery.discover(storage = storage, stopOnFirst = true).collect { state ->
+            onScanState(state)
+            if (state is DiscoveryState.Finished) {
+                if (state.hasFoundCamera) {
+                    target = state.primaryIp!!
+                    cameraClient.updateHost(target)
+                    storage.cameraHost = target
+                    cameraClient.log(CameraLogLevel.INFO, "Found camera at $target. Connecting...")
+                } else {
+                    cameraClient.log(
+                        CameraLogLevel.WARN,
+                        "No camera responded. Ensure camera Wi-Fi is on and connected to this network."
+                    )
+                }
+            }
+        }
+    } catch (e: Exception) {
+        cameraClient.log(CameraLogLevel.ERROR, "Error while scanning network: ${e.message}")
+    } finally {
+        onScanning(false)
+    }
+    return target
+}
