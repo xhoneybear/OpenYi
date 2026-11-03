@@ -16,6 +16,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeContent
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -38,10 +40,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.rememberNavController
 import com.composables.icons.materialsymbols.MaterialSymbols
 import com.composables.icons.materialsymbols.roundedfilled.Add_a_photo
 import com.composables.icons.materialsymbols.roundedfilled.Camera
@@ -56,10 +54,10 @@ enum class Step {
     FINISH;
 
     fun prev(): Step? =
-        entries[ordinal - 1]
+        entries.getOrNull(ordinal - 1)
 
     fun next(): Step? =
-        entries[ordinal + 1]
+        entries.getOrNull(ordinal + 1)
 }
 
 @Composable
@@ -123,17 +121,16 @@ fun PageIndicator(currentStep: Step?) {
 fun Intro(
     onFinish: () -> Unit
 ) {
-    val navController = rememberNavController()
-    val currentRoute =
-        navController
-            .currentBackStackEntryAsState()
-            .value?.destination?.route
+    val pagerState = rememberPagerState(pageCount = { Step.entries.size })
+    val coroutineScope = rememberCoroutineScope()
 
     Scaffold(
-        modifier = Modifier.windowInsetsPadding(
-            WindowInsets
-                .safeContent
-                .only(WindowInsetsSides.Vertical)
+        modifier = Modifier
+            .background(MaterialTheme.colorScheme.background)
+            .windowInsetsPadding(
+                WindowInsets
+                    .safeContent
+                    .only(WindowInsetsSides.Vertical)
         ),
         topBar = {
             Row(
@@ -158,12 +155,11 @@ fun Intro(
                     .padding(horizontal = 16.dp)
             ) {
                 Row(Modifier.weight(1f)) {
-                    if (currentRoute != Step.WELCOME.name) {
+                    if (pagerState.currentPage > 0) {
                         TextButton(
                             onClick = {
-                                val prevStep = currentRoute?.let { Step.valueOf(it) }?.prev()
-                                if (prevStep != null) {
-                                    navController.navigate(prevStep.name)
+                                coroutineScope.launch {
+                                    pagerState.animateScrollToPage(pagerState.currentPage - 1)
                                 }
                             }
                         ) {
@@ -177,9 +173,7 @@ fun Intro(
                     modifier = Modifier.weight(1f)
                 ) {
                     PageIndicator(
-                        currentStep = currentRoute?.let { route ->
-                            Step.entries.firstOrNull { it.name == route }
-                        }
+                        currentStep = Step.entries.getOrNull(pagerState.currentPage)
                     )
                 }
 
@@ -189,259 +183,266 @@ fun Intro(
                 ) {
                     Button(
                         onClick = {
-                            if (currentRoute == Step.FINISH.name) {
+                            if (pagerState.currentPage == Step.entries.lastIndex) {
                                 onFinish()
                             } else {
-                                val nextStep = currentRoute?.let { Step.valueOf(it) }?.next()
-                                if (nextStep != null) {
-                                    navController.navigate(nextStep.name)
+                                coroutineScope.launch {
+                                    pagerState.animateScrollToPage(pagerState.currentPage + 1)
                                 }
                             }
                         }
                     ) {
-                        Text(if (currentRoute == Step.FINISH.name) "Finish" else "Next")
+                        Text(if (pagerState.currentPage == Step.entries.lastIndex) "Finish" else "Next")
                     }
                 }
             }
         }
     ) { contentPadding ->
-        NavHost(
-            navController = navController,
-            startDestination = Step.WELCOME.name,
+        HorizontalPager(
+            state = pagerState,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(contentPadding)
-                .padding(horizontal = 16.dp)
-        ) {
-            composable(Step.WELCOME.name) {
-                Panel(
-                    icon = MaterialSymbols.RoundedFilled.Camera,
-                    title = "Welcome to OpenYi!",
-                    content = {
-                        IntroText("A modern application for controlling your Xiaoyi Action Camera.")
-                        IntroText("This wizard will help you set up your camera and get started.")
+                .padding(contentPadding),
+            pageSpacing = 16.dp
+        ) { page ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp),
+                contentAlignment = Alignment.TopCenter
+            ) {
+                when (Step.entries[page]) {
+                    Step.WELCOME -> {
+                        Panel(
+                            icon = MaterialSymbols.RoundedFilled.Camera,
+                            title = "Welcome to OpenYi!",
+                            content = {
+                                IntroText("A modern application for controlling your Xiaoyi Action Camera.")
+                                IntroText("This wizard will help you set up your camera and get started.")
+                            }
+                        )
                     }
-                )
-            }
-            composable(Step.CONNECT.name) {
-                Panel(
-                    icon = MaterialSymbols.RoundedFilled.Wifi,
-                    title = "Connect your camera",
-                    content = {
-                        val coroutineScope = rememberCoroutineScope()
-                        val cameraClient = remember { CameraClient.shared }
-                        val connectionState by cameraClient.connectionState.collectAsState()
-                        val isConnected by cameraClient.isConnected.collectAsState()
-                        val isScanning by cameraClient.isScanning.collectAsState()
-                        val discoveryState by cameraClient.discoveryState.collectAsState()
-                        val batteryInfo by cameraClient.batteryInfo.collectAsState()
+                    Step.CONNECT -> {
+                        Panel(
+                            icon = MaterialSymbols.RoundedFilled.Wifi,
+                            title = "Connect your camera",
+                            content = {
+                                val coroutineScope = rememberCoroutineScope()
+                                val cameraClient = remember { CameraClient.shared }
+                                val connectionState by cameraClient.connectionState.collectAsState()
+                                val isConnected by cameraClient.isConnected.collectAsState()
+                                val isScanning by cameraClient.isScanning.collectAsState()
+                                val discoveryState by cameraClient.discoveryState.collectAsState()
+                                val batteryInfo by cameraClient.batteryInfo.collectAsState()
 
-                        val statusTitle = when {
-                            isConnected -> "Camera connected!"
-                            isScanning -> "Scanning network..."
-                            connectionState is CameraConnectionState.Connecting -> "Connecting..."
-                            connectionState is CameraConnectionState.Error -> "Connection failed"
-                            else -> "Connection has not been checked."
-                        }
-
-                        val statusDescription = when {
-                            isConnected -> "Connected at ${cameraClient.host}. Battery: ${batteryInfo.displayText}."
-                            isScanning -> {
-                                val s = discoveryState as? DiscoveryState.Scanning
-                                if (s != null) {
-                                    "Scanning ${s.currentIp.ifBlank { "local network" }} (${s.checkedCount}/${s.totalCount})..."
-                                } else {
-                                    "Scanning local network..."
+                                val statusTitle = when {
+                                    isConnected -> "Camera connected!"
+                                    isScanning -> "Scanning network..."
+                                    connectionState is CameraConnectionState.Connecting -> "Connecting..."
+                                    connectionState is CameraConnectionState.Error -> "Connection failed"
+                                    else -> "Connection has not been checked."
                                 }
-                            }
-                            connectionState is CameraConnectionState.Connecting -> "Establishing session with camera at ${cameraClient.host}..."
-                            connectionState is CameraConnectionState.Error -> (connectionState as CameraConnectionState.Error).message
-                            else -> "Press the button below to connect and verify your camera."
-                        }
 
-                        val statusColor = when {
-                            isConnected -> MaterialTheme.colorScheme.primary
-                            isScanning || connectionState is CameraConnectionState.Connecting -> MaterialTheme.colorScheme.primary
-                            connectionState is CameraConnectionState.Error -> MaterialTheme.colorScheme.error
-                            else -> MaterialTheme.colorScheme.onSurfaceVariant
-                        }
+                                val statusDescription = when {
+                                    isConnected -> "Connected at ${cameraClient.host}. Battery: ${batteryInfo.displayText}."
+                                    isScanning -> {
+                                        val s = discoveryState as? DiscoveryState.Scanning
+                                        if (s != null) {
+                                            "Scanning ${s.currentIp.ifBlank { "local network" }} (${s.checkedCount}/${s.totalCount})..."
+                                        } else {
+                                            "Scanning local network..."
+                                        }
+                                    }
+                                    connectionState is CameraConnectionState.Connecting -> "Establishing session with camera at ${cameraClient.host}..."
+                                    connectionState is CameraConnectionState.Error -> (connectionState as CameraConnectionState.Error).message
+                                    else -> "Press the button below to connect and verify your camera."
+                                }
 
-                        val statusBackgroundColor = when {
-                            isConnected -> MaterialTheme.colorScheme.primaryContainer
-                            isScanning || connectionState is CameraConnectionState.Connecting -> MaterialTheme.colorScheme.surfaceVariant
-                            connectionState is CameraConnectionState.Error -> MaterialTheme.colorScheme.errorContainer
-                            else -> MaterialTheme.colorScheme.surfaceVariant
-                        }
+                                val statusColor = when {
+                                    isConnected -> MaterialTheme.colorScheme.primary
+                                    isScanning || connectionState is CameraConnectionState.Connecting -> MaterialTheme.colorScheme.primary
+                                    connectionState is CameraConnectionState.Error -> MaterialTheme.colorScheme.error
+                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                }
 
-                        IntroText("Start your Yi Cam, press the Wi-Fi button, and connect to your camera's network.")
-                        IntroText("The name of your camera's network should start with 'YDXJ'.")
+                                val statusBackgroundColor = when {
+                                    isConnected -> MaterialTheme.colorScheme.primaryContainer
+                                    isScanning || connectionState is CameraConnectionState.Connecting -> MaterialTheme.colorScheme.surfaceVariant
+                                    connectionState is CameraConnectionState.Error -> MaterialTheme.colorScheme.errorContainer
+                                    else -> MaterialTheme.colorScheme.surfaceVariant
+                                }
 
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier
-                                .background(
-                                    color = statusBackgroundColor,
-                                    shape = MaterialTheme.shapes.medium
-                                )
-                                .border(
-                                    width = 1.dp,
-                                    color = statusColor,
-                                    shape = MaterialTheme.shapes.medium
-                                )
-                                .padding(16.dp)
-                        ) {
-                            Text(
-                                text = statusTitle,
-                                color = statusColor,
-                                style = MaterialTheme.typography.titleMedium,
-                                textAlign = TextAlign.Center
-                            )
-                            Text(
-                                text = statusDescription,
-                                style = MaterialTheme.typography.bodyMedium,
-                                textAlign = TextAlign.Center
-                            )
-                            if (isScanning && discoveryState is DiscoveryState.Scanning) {
-                                val scan = discoveryState as DiscoveryState.Scanning
-                                LinearProgressIndicator(
-                                    progress = { scan.progress },
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
-                                )
-                            }
-                            Button(
-                                enabled = !isScanning && connectionState !is CameraConnectionState.Connecting,
-                                onClick = {
-                                    coroutineScope.launch {
-                                        cameraClient.connectAndInitialize(forceReconnect = true)
+                                IntroText("Start your Yi Cam, press the Wi-Fi button, and connect to your camera's network.")
+                                IntroText("The name of your camera's network should start with 'YDXJ'.")
+
+                                Column(
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier
+                                        .background(
+                                            color = statusBackgroundColor,
+                                            shape = MaterialTheme.shapes.medium
+                                        )
+                                        .border(
+                                            width = 1.dp,
+                                            color = statusColor,
+                                            shape = MaterialTheme.shapes.medium
+                                        )
+                                        .padding(16.dp)
+                                ) {
+                                    Text(
+                                        text = statusTitle,
+                                        color = statusColor,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Text(
+                                        text = statusDescription,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    if (isScanning && discoveryState is DiscoveryState.Scanning) {
+                                        val scan = discoveryState as DiscoveryState.Scanning
+                                        LinearProgressIndicator(
+                                            progress = { scan.progress },
+                                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                                        )
+                                    }
+                                    Button(
+                                        enabled = !isScanning && connectionState !is CameraConnectionState.Connecting,
+                                        onClick = {
+                                            coroutineScope.launch {
+                                                cameraClient.connectAndInitialize(forceReconnect = true)
+                                            }
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = MaterialSymbols.RoundedFilled.Sensors,
+                                            contentDescription = null,
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .padding(end = 8.dp)
+                                        )
+                                        Text(
+                                            when {
+                                                isScanning -> "Scanning..."
+                                                connectionState is CameraConnectionState.Connecting -> "Connecting..."
+                                                isConnected -> "Test again"
+                                                else -> "Connect camera"
+                                            }
+                                        )
                                     }
                                 }
-                            ) {
-                                Icon(
-                                    imageVector = MaterialSymbols.RoundedFilled.Sensors,
-                                    contentDescription = null,
-                                    modifier = Modifier
-                                        .size(28.dp)
-                                        .padding(end = 8.dp)
-                                )
-                                Text(
-                                    when {
-                                        isScanning -> "Scanning..."
-                                        connectionState is CameraConnectionState.Connecting -> "Connecting..."
-                                        isConnected -> "Test again"
-                                        else -> "Connect camera"
-                                    }
-                                )
                             }
-                        }
+                        )
                     }
-                )
-            }
-            composable(Step.EXTRA.name) {
-                Panel(
-                    icon = MaterialSymbols.RoundedFilled.Add_a_photo,
-                    title = "Your camera can do more",
-                    content = {
-                        var telnetStatus: Boolean? = null
+                    Step.EXTRA -> {
+                        Panel(
+                            icon = MaterialSymbols.RoundedFilled.Add_a_photo,
+                            title = "Your camera can do more",
+                            content = {
+                                var telnetStatus: Boolean? = null
 
-                        var statusTitle =
-                            if (telnetStatus == null) {
-                                "Test telnet connection"
-                            } else if (telnetStatus) {
-                                "Telnet accessible!"
-                            } else {
-                                "Telnet is not available."
-                            }
-                        var statusDescription =
-                            if (telnetStatus == null) {
-                                "Press the button below to check the connection."
-                            } else if (telnetStatus) {
-                                "Telnet is open at port 23. You can access advanced settings."
-                            } else {
-                                "Make sure that you have completed all the steps."
-                            }
-                        var statusColor =
-                            if (telnetStatus == null) {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            } else if (telnetStatus) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.error
-                            }
-                        var statusBackgroundColor =
-                            if (telnetStatus == null) {
-                                MaterialTheme.colorScheme.surfaceVariant
-                            } else if (telnetStatus) {
-                                MaterialTheme.colorScheme.primaryContainer
-                            } else {
-                                MaterialTheme.colorScheme.errorContainer
-                            }
-
-                        IntroText("Yi Action Camera has a lot of advanced features available, such as configurable exposure, denoising, button bindings, and more.")
-                        IntroText("This app supports these features, But you need to create an empty file on the camera's SD card.")
-                        IntroText("The file must be named 'enable_info_display.script' and placed in the root of the SD card. You need to restart your camera after creating the file.")
-                        IntroText("The app will scan your camera's telnet port to enable advanced settings section.")
-
-                        Column(
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier
-                                .background(
-                                    color = statusBackgroundColor,
-                                    shape = MaterialTheme.shapes.medium
-                                )
-                                .border(
-                                    width = 1.dp,
-                                    color = statusColor,
-                                    shape = MaterialTheme.shapes.medium
-                                )
-                                .padding(16.dp)
-                        ) {
-                            Text(
-                                text = statusTitle,
-                                color = statusColor,
-                                style = MaterialTheme.typography.titleMedium,
-                                textAlign = TextAlign.Center
-                            )
-                            Text(
-                                text = statusDescription,
-                                style = MaterialTheme.typography.bodyMedium,
-                                textAlign = TextAlign.Center
-                            )
-                            Button(
-                                onClick = {
-                                    // Handle connection test
-                                }
-                            ) {
-                                Icon(
-                                    imageVector = MaterialSymbols.RoundedFilled.Sensors,
-                                    contentDescription = null,
-                                    modifier = Modifier
-                                        .size(28.dp)
-                                        .padding(end = 8.dp)
-                                )
-                                Text(
+                                var statusTitle =
                                     if (telnetStatus == null) {
-                                        "Test connection"
+                                        "Test telnet connection"
+                                    } else if (telnetStatus) {
+                                        "Telnet accessible!"
                                     } else {
-                                        "Check again"
+                                        "Telnet is not available."
                                     }
-                                )
+                                var statusDescription =
+                                    if (telnetStatus == null) {
+                                        "Press the button below to check the connection."
+                                    } else if (telnetStatus) {
+                                        "Telnet is open at port 23. You can access advanced settings."
+                                    } else {
+                                        "Make sure that you have completed all the steps."
+                                    }
+                                var statusColor =
+                                    if (telnetStatus == null) {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    } else if (telnetStatus) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.error
+                                    }
+                                var statusBackgroundColor =
+                                    if (telnetStatus == null) {
+                                        MaterialTheme.colorScheme.surfaceVariant
+                                    } else if (telnetStatus) {
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    } else {
+                                        MaterialTheme.colorScheme.errorContainer
+                                    }
+
+                                IntroText("Yi Action Camera has a lot of advanced features available, such as configurable exposure, denoising, button bindings, and more.")
+                                IntroText("This app supports these features, But you need to create an empty file on the camera's SD card.")
+                                IntroText("The file must be named 'enable_info_display.script' and placed in the root of the SD card. You need to restart your camera after creating the file.")
+                                IntroText("The app will scan your camera's telnet port to enable advanced settings section.")
+
+                                Column(
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    modifier = Modifier
+                                        .background(
+                                            color = statusBackgroundColor,
+                                            shape = MaterialTheme.shapes.medium
+                                        )
+                                        .border(
+                                            width = 1.dp,
+                                            color = statusColor,
+                                            shape = MaterialTheme.shapes.medium
+                                        )
+                                        .padding(16.dp)
+                                ) {
+                                    Text(
+                                        text = statusTitle,
+                                        color = statusColor,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Text(
+                                        text = statusDescription,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Button(
+                                        onClick = {
+                                            // Handle connection test
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = MaterialSymbols.RoundedFilled.Sensors,
+                                            contentDescription = null,
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .padding(end = 8.dp)
+                                        )
+                                        Text(
+                                            if (telnetStatus == null) {
+                                                "Test connection"
+                                            } else {
+                                                "Check again"
+                                            }
+                                        )
+                                    }
+                                }
+                                
                             }
-                        }
-                        
+                        )
                     }
-                )
-            }
-            composable(Step.FINISH.name) {
-                Panel(
-                    icon = MaterialSymbols.RoundedFilled.Rocket_launch,
-                    title = "You're all set!",
-                    content = {
-                        IntroText("The camera is set up and ready to use.")
-                        IntroText("You can configure it further in the settings menu.")
+                    Step.FINISH -> {
+                        Panel(
+                            icon = MaterialSymbols.RoundedFilled.Rocket_launch,
+                            title = "You're all set!",
+                            content = {
+                                IntroText("The camera is set up and ready to use.")
+                                IntroText("You can configure it further in the settings menu.")
+                            }
+                        )
                     }
-                )
+                }
             }
         }
     }
