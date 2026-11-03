@@ -145,4 +145,16 @@ class SharedCommonTest {
         assertEquals("custom_mode", customType)
         assertEquals("timelapse", customParam)
     }
+
+    @Test
+    fun testComputeSubnetCandidates() {
+        val candidates = CameraDiscovery.computeSubnetCandidates("192.168.1.50")
+        assertEquals(253, candidates.size)
+        assertTrue(candidates.contains("192.168.1.1"))
+        assertTrue(candidates.contains("192.168.1.254"))
+        assertFalse(candidates.contains("192.168.1.50"))
+
+        val invalid = CameraDiscovery.computeSubnetCandidates("invalid_ip")
+        assertTrue(invalid.isEmpty())
+    }
 }

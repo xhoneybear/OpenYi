@@ -65,6 +65,19 @@ data class CameraPacket(
     }
 }
 
+enum class CameraLogLevel {
+    TX,
+    RX,
+    INFO,
+    WARN,
+    ERROR
+}
+
+data class CameraLogEntry(
+    val level: CameraLogLevel,
+    val message: String
+)
+
 /**
  * A classified signal / notification event received from the camera.
  */
@@ -165,11 +178,17 @@ class JsonStreamFramer(
  * Communicates with the camera via JSON commands on TCP port 7878.
  */
 class CameraClient(
-    val host: String = DEFAULT_HOST,
+    var host: String = DEFAULT_HOST,
     val port: Int = DEFAULT_PORT,
     private val selector: SelectorManager = SelectorManager(Dispatchers.Default),
     private val storage: AppStorage? = null
 ) {
+    init {
+        storage?.cameraHost?.let { savedHost ->
+            host = savedHost
+        }
+    }
+
     companion object {
         const val DEFAULT_HOST = "192.168.42.1"
         const val DEFAULT_PORT = 7878
@@ -187,7 +206,25 @@ class CameraClient(
         const val MSG_STOP_RECORD = 514
         const val MSG_TAKE_PHOTO = 769
 
-        val shared: CameraClient by lazy { CameraClient(storage = AppStorage()) }
+        val shared: CameraClient by lazy {
+            val s = AppStorage()
+            CameraClient(host = s.cameraHost, storage = s)
+        }
+    }
+
+    fun updateHost(newHost: String) {
+        if (host != newHost) {
+            host = newHost
+            storage?.cameraHost = newHost
+            log(CameraLogLevel.INFO, "Camera target host set to: $newHost")
+        }
+    }
+
+    private val _logs = MutableSharedFlow<CameraLogEntry>(replay = 50, extraBufferCapacity = 64)
+    val logs: SharedFlow<CameraLogEntry> = _logs.asSharedFlow()
+
+    fun log(level: CameraLogLevel, message: String) {
+        _logs.tryEmit(CameraLogEntry(level, message))
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -233,19 +270,29 @@ class CameraClient(
 
     suspend fun connect(targetHost: String = host, targetPort: Int = port) {
         connectionMutex.withLock {
-            if (_isConnected.value) return
+            if (_isConnected.value) {
+                log(CameraLogLevel.WARN, "Already connected to $host:$port")
+                return
+            }
 
+            log(CameraLogLevel.INFO, "Connecting to $targetHost:$targetPort...")
             try {
                 val newSocket = aSocket(selector).tcp().connect(targetHost, targetPort)
+                if (targetHost != host) {
+                    updateHost(targetHost)
+                }
                 socket = newSocket
                 val read = newSocket.openReadChannel()
                 val write = newSocket.openWriteChannel(autoFlush = true)
                 readChannel = read
                 writeChannel = write
                 _isConnected.value = true
+                log(CameraLogLevel.INFO, "Connected to $targetHost:$targetPort")
 
                 startReadLoop(read)
             } catch (e: Exception) {
+                val errorDetails = e.message ?: e::class.simpleName ?: e.toString()
+                log(CameraLogLevel.ERROR, "Connect to $targetHost:$targetPort failed: $errorDetails")
                 disconnectInternal()
                 throw e
             }
@@ -254,11 +301,13 @@ class CameraClient(
 
     suspend fun disconnect() {
         connectionMutex.withLock {
+            log(CameraLogLevel.INFO, "Disconnecting from $host:$port")
             disconnectInternal()
         }
     }
 
     private fun disconnectInternal() {
+        val wasConnected = _isConnected.value
         _isConnected.value = false
         readJob?.cancel()
         readJob = null
@@ -275,6 +324,9 @@ class CameraClient(
         socket = null
         readChannel = null
         writeChannel = null
+        if (wasConnected) {
+            log(CameraLogLevel.WARN, "Disconnected from camera")
+        }
     }
 
     private fun startReadLoop(read: ByteReadChannel) {
@@ -300,6 +352,7 @@ class CameraClient(
     }
 
     private fun handleIncomingPacket(jsonString: String) {
+        log(CameraLogLevel.RX, jsonString)
         val response = CameraPacket.parse(jsonString)
 
         if (response.msgId == MSG_START_SESSION && response.isSuccess) {
@@ -358,10 +411,16 @@ class CameraClient(
             }
 
             try {
+                log(CameraLogLevel.TX, json.toString())
                 write.writeFully(json.toString().encodeToByteArray())
+                write.flush()
                 withTimeout(timeoutMs) {
                     deferred.await()
                 }
+            } catch (e: Exception) {
+                val errorDetails = e.message ?: e::class.simpleName ?: e.toString()
+                log(CameraLogLevel.ERROR, "Send failed (msg_id ${json.msgId}): $errorDetails")
+                throw e
             } finally {
                 if (json.msgId != null) {
                     pendingRequests.remove(json.msgId)
@@ -390,8 +449,15 @@ class CameraClient(
      * Sends `{"msg_id":257,"token":0}` to start a session and acquire a session token.
      */
     suspend fun startSession(timeoutMs: Long = 5000): CameraPacket {
+        log(CameraLogLevel.INFO, "Starting session (msg_id: 257)...")
         val packet = CameraPacket(msgId = MSG_START_SESSION, token = 0)
-        return sendPacket(packet, timeoutMs)
+        return sendPacket(packet, timeoutMs).also { resp ->
+            if (resp.isSuccess) {
+                log(CameraLogLevel.INFO, "Session started successfully! Token: ${resp.intParam}")
+            } else {
+                log(CameraLogLevel.WARN, "Session start returned rval: ${resp.rval}")
+            }
+        }
     }
 
     /**

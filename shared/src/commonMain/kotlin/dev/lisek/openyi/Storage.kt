@@ -15,6 +15,10 @@ class AppStorage(
             }
         }
 
+    var cameraHost: String
+        get() = settings.getString("camera_host", defaultValue = CameraClient.DEFAULT_HOST)
+        set(value) = settings.putString("camera_host", value)
+
     var showIntro: Boolean
         get() = settings.getBoolean("showIntro", defaultValue = true)
         set(value) = settings.putBoolean("showIntro", value)

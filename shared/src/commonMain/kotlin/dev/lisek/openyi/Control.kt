@@ -24,11 +24,13 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -37,12 +39,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -51,6 +53,7 @@ import com.composables.icons.materialsymbols.roundedfilled.Close
 import com.composables.icons.materialsymbols.roundedfilled.Photo_camera
 import com.composables.icons.materialsymbols.roundedfilled.Refresh
 import com.composables.icons.materialsymbols.roundedfilled.Sd_card_alert
+import com.composables.icons.materialsymbols.roundedfilled.Sensors
 import com.composables.icons.materialsymbols.roundedfilled.Settings
 import com.composables.icons.materialsymbols.roundedfilled.Timer_10_alt_1
 import com.composables.icons.materialsymbols.roundedfilled.Timer_3_alt_1
@@ -86,8 +89,21 @@ fun Control() {
     var sdCardMessage by remember { mutableStateOf<String?>(null) }
 
     val coroutineScope = rememberCoroutineScope()
+    val storage = remember { AppStorage() }
     val cameraClient = remember { CameraClient.shared }
-    val responses = remember { mutableStateListOf<String>() }
+    val isConnected by cameraClient.isConnected.collectAsState()
+    var isConnecting by remember { mutableStateOf(false) }
+
+    val debugLogs = remember { mutableStateListOf<CameraLogEntry>() }
+    var scanState by remember { mutableStateOf<DiscoveryState>(DiscoveryState.Idle) }
+    var isScanning by remember { mutableStateOf(false) }
+
+    suspend fun doScan(): String? = scanNetwork(
+        cameraClient = cameraClient,
+        storage = storage,
+        onScanState = { scanState = it },
+        onScanning = { isScanning = it }
+    )
 
     LaunchedEffect(isRecording) {
         if (!isRecording) {
@@ -95,15 +111,15 @@ fun Control() {
         }
     }
 
-    LaunchedEffect(Unit) {
-        // Collect all incoming raw JSON-formatted signals and responses
-        launch {
-            cameraClient.rawResponses.collect { rawJson ->
-                responses.add(0, rawJson)
-            }
+    // Stream all client logs into the debug log view
+    LaunchedEffect(cameraClient) {
+        cameraClient.logs.collect { entry ->
+            debugLogs.add(0, entry)
         }
+    }
 
-        // 257 observer collects signals and by type classification invokes functions with param
+    LaunchedEffect(restartToken) {
+        // Setup signal dispatcher
         cameraClient.signalDispatcher = object : CameraSignalDispatcher() {
             override fun onSignal(type: String, param: String?, rawResponse: CameraPacket) {
                 super.onSignal(type, param, rawResponse)
@@ -154,9 +170,21 @@ fun Control() {
             }
         }
 
-        withContext(Dispatchers.IO) {
+        isConnecting = true
+        withContext(Dispatchers.Default) {
+            val localIp = getLocalIp()
+
+            val targetHost = doScan()
+
+            if (targetHost == null) {
+                errorMessage = "No camera found on the local network."
+                isConnecting = false
+                return@withContext
+            }
+
             try {
-                cameraClient.connect()
+                cameraClient.disconnect()
+                cameraClient.connect(targetHost = targetHost)
                 // Send packet {"msg_id":257,"token":0} and observe response
                 val sessionResponse = cameraClient.startSession()
                 println("Session 257 response: ${sessionResponse.toString()}")
@@ -165,11 +193,14 @@ fun Control() {
                 val token = sessionResponse.intParam ?: cameraClient.currentToken.value ?: 0
                 val settingsResponse = cameraClient.send(msgId = 3, token = token)
                 println("msg_id 3 response: ${settingsResponse.toString()}")
+                errorMessage = null
             } catch (e: Exception) {
                 e.printStackTrace()
                 val errorDetails = e.message ?: e::class.simpleName ?: e.toString()
                 println("Camera socket error: $errorDetails")
-                responses.add(0, "Socket error: $errorDetails (${e::class.simpleName})")
+                errorMessage = "Socket error: $errorDetails"
+            } finally {
+                isConnecting = false
             }
         }
     }
@@ -374,36 +405,176 @@ fun Control() {
                 }
             }
 
-            // Print the collected responses in control body
-            LazyColumn(
+            // Connection Debug & Log View
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
-                    .padding(16.dp),
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                item {
-                    Text(
-                        text = "Camera Responses (${responses.size}):",
-                        style = MaterialTheme.typography.titleSmall
-                    )
+                // Header with status indicator and quick actions
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    when {
+                                        isConnected -> Color(0xFF4CAF50)
+                                        isConnecting -> Color(0xFFFF9800)
+                                        else -> MaterialTheme.colorScheme.error
+                                    }
+                                )
+                        )
+                        Text(
+                            text = when {
+                                isConnected -> "Connected"
+                                isConnecting -> "Connecting..."
+                                else -> "Disconnected"
+                            },
+                            style = MaterialTheme.typography.titleSmall,
+                            color = when {
+                                isConnected -> Color(0xFF2E7D32)
+                                isConnecting -> Color(0xFFE65100)
+                                else -> MaterialTheme.colorScheme.error
+                            }
+                        )
+                        Text(
+                            text = "(${cameraClient.host}:${cameraClient.port})",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    IconButton(
+                        onClick = { restartToken++ },
+                        enabled = !isConnecting,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = MaterialSymbols.RoundedFilled.Refresh,
+                            contentDescription = "Reconnect",
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
-                items(responses) { resp ->
-                    Text(
-                        text = resp,
-                        style = MaterialTheme.typography.bodySmall,
+
+                if (isScanning && scanState is DiscoveryState.Scanning) {
+                    val scan = scanState as DiscoveryState.Scanning
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(
-                                MaterialTheme.colorScheme.surfaceVariant,
-                                shape = MaterialTheme.shapes.small
+                            .background(MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.small)
+                            .padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        LinearProgressIndicator(
+                            progress = { scan.progress },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(
+                            text = "Scanning ${scan.currentIp.ifBlank { "network" }} (${scan.checkedCount}/${scan.totalCount})...",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+
+                // Log entries list
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(debugLogs) { entry ->
+                        val badgeColor = when (entry.level) {
+                            CameraLogLevel.INFO -> MaterialTheme.colorScheme.primary
+                            CameraLogLevel.TX -> Color(0xFF00838F)
+                            CameraLogLevel.RX -> Color(0xFF2E7D32)
+                            CameraLogLevel.WARN -> Color(0xFFE65100)
+                            CameraLogLevel.ERROR -> MaterialTheme.colorScheme.error
+                        }
+                        val containerColor = badgeColor.copy(alpha = 0.12f)
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(containerColor, shape = MaterialTheme.shapes.small)
+                                .padding(8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Text(
+                                text = "[${entry.level.name}]",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = badgeColor,
+                                fontFamily = FontFamily.Monospace
                             )
-                            .padding(8.dp)
-                    )
+                            Text(
+                                text = entry.message,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
                 }
             }
         }
     }
+}
+
+suspend fun scanNetwork(
+    cameraClient: CameraClient = CameraClient.shared,
+    storage: AppStorage = AppStorage(),
+    onScanState: (DiscoveryState) -> Unit = {},
+    onScanning: (Boolean) -> Unit = {}
+): String? {
+    val localIp = getLocalIp()
+    val localSubnet = localIp?.substringBeforeLast(".")
+    val hostSubnet = cameraClient.host.substringBeforeLast(".")
+
+    onScanning(true)
+    var target: String? = null
+    try {
+        if (localSubnet != null && localSubnet != hostSubnet) {
+            cameraClient.log(
+                CameraLogLevel.INFO,
+                "Subnet changed: last target was ${cameraClient.host}, device is at $localIp."
+            )
+        }
+        cameraClient.log(CameraLogLevel.INFO, "Checking local subnet for camera IP...")
+        CameraDiscovery.discover(storage = storage, stopOnFirst = true).collect { state ->
+            onScanState(state)
+            if (state is DiscoveryState.Finished) {
+                if (state.hasFoundCamera) {
+                    target = state.primaryIp!!
+                    cameraClient.updateHost(target)
+                    storage.cameraHost = target
+                    cameraClient.log(CameraLogLevel.INFO, "Found camera at $target. Connecting...")
+                } else {
+                    cameraClient.log(
+                        CameraLogLevel.WARN,
+                        "No camera responded. Ensure camera Wi-Fi is on and connected to this network."
+                    )
+                }
+            }
+        }
+    } catch (e: Exception) {
+        cameraClient.log(CameraLogLevel.ERROR, "Error while scanning network: ${e.message}")
+    } finally {
+        onScanning(false)
+    }
+    return target
 }
 
 @Composable
