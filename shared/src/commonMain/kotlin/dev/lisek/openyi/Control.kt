@@ -265,10 +265,11 @@ fun Control() {
             .fillMaxSize()
             .padding(padding)
         ) {
+            val cameraHost = cameraClient.host
             Box {
                 if (isRecording) {
                     RtspPreview(
-                        url = "rtsp://192.168.42.1:554/live",
+                        url = "rtsp://$cameraHost:554/live",
                         restartToken = restartToken,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -276,15 +277,16 @@ fun Control() {
                             .background(Color.Black)
                     ) { state ->
                         playerState = state
-                        when (state) {
+                        localErrorMessage = when (state) {
                             RtspPlayerState.Disconnected,
                             RtspPlayerState.Buffering,
                             RtspPlayerState.Playing -> {
-                                localErrorMessage = null
+                                null
                             }
+
                             RtspPlayerState.Idle,
                             RtspPlayerState.Error -> {
-                                localErrorMessage = if (state == RtspPlayerState.Error) {
+                                if (state == RtspPlayerState.Error) {
                                     "Unable to decode RTSP stream!"
                                 } else {
                                     "Connection lost. Dismiss to retry."
