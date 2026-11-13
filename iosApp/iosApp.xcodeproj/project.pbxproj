@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		7122E4DF309B80F0000CB8B4 /* MobileVLCKit in Frameworks */ = {isa = PBXBuildFile; productRef = 7122E4DE309B80F0000CB8B4 /* MobileVLCKit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		182FEA3DF34FDA9575B962B6 /* OpenYi.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OpenYi.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -41,6 +45,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7122E4DF309B80F0000CB8B4 /* MobileVLCKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -85,6 +90,7 @@
 			);
 			name = iosApp;
 			packageProductDependencies = (
+				7122E4DE309B80F0000CB8B4 /* MobileVLCKit */,
 			);
 			productName = iosApp;
 			productReference = 182FEA3DF34FDA9575B962B6 /* OpenYi.app */;
@@ -114,6 +120,9 @@
 			);
 			mainGroup = 684DAC34957B675C069491F4;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				7122E4DD309B80F0000CB8B4 /* XCRemoteSwiftPackageReference "MobileVLCKit-SPM" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 0473D76E77C7F2F3AF74AD06 /* Products */;
 			projectDirPath = "";
@@ -368,6 +377,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		7122E4DD309B80F0000CB8B4 /* XCRemoteSwiftPackageReference "MobileVLCKit-SPM" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/showbie/MobileVLCKit-SPM.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 3.7.3;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		7122E4DE309B80F0000CB8B4 /* MobileVLCKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7122E4DD309B80F0000CB8B4 /* XCRemoteSwiftPackageReference "MobileVLCKit-SPM" */;
+			productName = MobileVLCKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 80EA7488A341DAC114EBA411 /* Project object */;
 }
