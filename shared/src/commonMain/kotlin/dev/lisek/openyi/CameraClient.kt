@@ -119,6 +119,10 @@ sealed interface CameraSignal {
         val isRecording: Boolean
     ) : CameraSignal
 
+    data class UsbStorage(
+        val active: Boolean
+    ) : CameraSignal
+
     data class Viewfinder(
         val active: Boolean
     ) : CameraSignal
@@ -155,6 +159,9 @@ sealed interface CameraSignal {
                 )
                 "video_record_complete" -> VideoRecord(
                     isRecording = false
+                )
+                "start_usb_storage" -> UsbStorage(
+                    active = true
                 )
                 "vf_start" -> Viewfinder(
                     active = true
@@ -455,6 +462,12 @@ class CameraClient(
                         _sdCardAlert.value = "SD card full. Please free up space."
                     } else if (signal.status == "LOW_SPEED_CARD") {
                         _sdCardAlert.value = "SD card slow. Quality may be affected."
+                    }
+                }
+                is CameraSignal.UsbStorage -> {
+                    if (signal.active) {
+                        _sdCardAlert.value = "USB connected. Camera will not respond in this mode. Disconnecting."
+                        disconnectInternal()
                     }
                 }
                 is CameraSignal.VideoRecord -> {
