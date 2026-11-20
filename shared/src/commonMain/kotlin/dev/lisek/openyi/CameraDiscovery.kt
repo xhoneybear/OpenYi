@@ -18,6 +18,7 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Represents the progress and results of a camera network discovery operation.
@@ -66,31 +67,26 @@ object CameraDiscovery {
     ): Boolean {
         var socket: Socket? = null
         return try {
-            withTimeoutOrNull(timeoutMs) {
+            withTimeoutOrNull(timeoutMs.milliseconds) {
                 val newSocket = aSocket(selector).tcp().connect(targetHost, port)
                 socket = newSocket
                 val read = newSocket.openReadChannel()
                 val write = newSocket.openWriteChannel(autoFlush = true)
 
-                try {
-                    // Send session start probe packet
-                    val probe = """{"msg_id":257,"token":0}"""
-                    write.writeFully(probe.encodeToByteArray())
-                    write.flush()
+                // Send session start probe packet
+                val probe = """{"msg_id":257,"token":0}"""
+                write.writeFully(probe.encodeToByteArray())
+                write.flush()
 
-                    val buffer = ByteArray(2048)
-                    val bytesRead = withTimeoutOrNull(600) { read.readAvailable(buffer) } ?: 0
-                    if (bytesRead > 0) {
-                        val responseString = buffer.decodeToString(0, bytesRead)
-                        // Camera returns JSON containing msg_id (e.g. msg_id 7 vf_stop, msg_id 257) or rval
-                        if (responseString.contains("msg_id") || responseString.contains("rval") || responseString.contains("type")) {
-                            return@withTimeoutOrNull true
-                        }
-                    }
-                } catch (_: Exception) {}
-
-                // On a local /24 subnet, accepting a TCP socket on proprietary port 7878 confirms the camera
-                true
+                val buffer = ByteArray(2048)
+                val bytesRead = withTimeoutOrNull(timeoutMs.milliseconds) { read.readAvailable(buffer) } ?: 0
+                if (bytesRead > 0) {
+                    val responseString = buffer.decodeToString(0, bytesRead)
+                    // Must strictly contain valid Yi Camera JSON response indicators
+                    responseString.contains("msg_id") || responseString.contains("rval") || responseString.contains("type")
+                } else {
+                    false
+                }
             } ?: false
         } catch (_: Exception) {
             false
@@ -139,18 +135,14 @@ object CameraDiscovery {
                 if (localSubnet == "192.168.42") {
                     // Connected to camera's own Wi-Fi AP
                     priorityIps.add(CameraClient.DEFAULT_HOST)
-                } else {
-                    // On home/local network (e.g. 192.168.1.x)
-                    // Do NOT probe 192.168.42.1 because it is unroutable and will hang.
-                    // Only prioritize savedHost if it matches the current subnet.
-                    if (!savedHost.isNullOrBlank() && savedHost.substringBeforeLast(".") == localSubnet) {
-                        priorityIps.add(savedHost)
-                    }
+                } else if (!savedHost.isNullOrBlank() && savedHost.substringBeforeLast(".") == localSubnet) {
+                    priorityIps.add(savedHost)
                 }
             } else {
                 if (!savedHost.isNullOrBlank()) priorityIps.add(savedHost)
                 priorityIps.add(CameraClient.DEFAULT_HOST)
             }
+
             val subnetCandidates = if (localIp != null) {
                 computeSubnetCandidates(localIp).filter { !priorityIps.contains(it) }
             } else {

@@ -50,6 +50,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.composables.icons.materialsymbols.MaterialSymbols
 import com.composables.icons.materialsymbols.roundedfilled.Close
+import com.composables.icons.materialsymbols.roundedfilled.Link_off
 import com.composables.icons.materialsymbols.roundedfilled.Photo_camera
 import com.composables.icons.materialsymbols.roundedfilled.Refresh
 import com.composables.icons.materialsymbols.roundedfilled.Sd_card_alert
@@ -376,16 +377,37 @@ fun Control() {
                         )
                     }
 
-                    IconButton(
-                        onClick = { triggerReconnect() },
-                        enabled = !isConnecting,
-                        modifier = Modifier.size(32.dp)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = MaterialSymbols.RoundedFilled.Refresh,
-                            contentDescription = "Reconnect",
-                            modifier = Modifier.size(20.dp)
-                        )
+                        IconButton(
+                            onClick = {
+                                coroutineScope.launch {
+                                    runCatching { cameraClient.stopSession() }
+                                }
+                            },
+                            enabled = isConnected && !isConnecting,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = MaterialSymbols.RoundedFilled.Link_off,
+                                contentDescription = "Stop Session",
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        IconButton(
+                            onClick = { triggerReconnect() },
+                            enabled = !isConnecting,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = MaterialSymbols.RoundedFilled.Refresh,
+                                contentDescription = "Reconnect",
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
                     }
                 }
 

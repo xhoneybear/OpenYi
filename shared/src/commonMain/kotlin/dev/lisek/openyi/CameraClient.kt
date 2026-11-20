@@ -31,8 +31,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonPrimitive
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Representation of a JSON response received from the Yi Action Camera on TCP port 7878.
@@ -221,6 +221,7 @@ class CameraClient(
         const val MSG_START_RECORD = 513
         const val MSG_STOP_RECORD = 514
         const val MSG_TAKE_PHOTO = 769
+        const val MSG_TERMINATE_CONNECTION = 1793
 
         val shared: CameraClient by lazy {
             val s = AppStorage()
@@ -278,7 +279,7 @@ class CameraClient(
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
 
-    private val _currentToken = MutableStateFlow<Int?>(storage?.authToken?.toIntOrNull())
+    private val _currentToken = MutableStateFlow<Int?>(null)
     val currentToken: StateFlow<Int?> = _currentToken.asStateFlow()
 
     private val _responses = MutableSharedFlow<CameraPacket>(extraBufferCapacity = 64)
@@ -348,6 +349,7 @@ class CameraClient(
         val wasConnected = _isConnected.value
         _isConnected.value = false
         _connectionState.value = CameraConnectionState.Disconnected
+        _currentToken.value = null
         readJob?.cancel()
         readJob = null
 
@@ -393,15 +395,19 @@ class CameraClient(
     private fun handleIncomingPacket(jsonString: String) {
         log(CameraLogLevel.RX, jsonString)
         val response = CameraPacket.parse(jsonString)
+        val msgId = response.msgId
 
+        if (msgId == MSG_TERMINATE_CONNECTION) {
+            log(CameraLogLevel.WARN, "Camera terminated the connection.")
+            disconnectInternal()
+            return
+        }
         if (response.msgId == MSG_START_SESSION && response.isSuccess) {
             response.intParam?.let { token ->
                 _currentToken.value = token
-                storage?.authToken = token.toString()
             }
         } else if (response.token != null && _currentToken.value == null) {
             _currentToken.value = response.token
-            storage?.authToken = response.token.toString()
         }
 
         _rawResponses.tryEmit(jsonString)
@@ -446,7 +452,6 @@ class CameraClient(
             anySignalHandlers.forEach { it.invoke(type, param) }
         }
 
-        val msgId = response.msgId
         if (msgId != null && pendingRequests.containsKey(msgId)) {
             pendingRequests.remove(msgId)?.complete(response)
         } else if (genericPendingRequest != null) {
@@ -468,51 +473,59 @@ class CameraClient(
             disconnect()
         }
 
-        val targetHost: String
-        if (!explicitHost.isNullOrBlank()) {
-            targetHost = explicitHost
-        } else {
-            // Check if current/saved host is reachable first
-            val candidateHost = storage?.cameraHost ?: host
-            val fastProbeSuccess = CameraDiscovery.probeCamera(candidateHost, port = port, timeoutMs = 600, selector = selector)
-            if (fastProbeSuccess) {
-                targetHost = candidateHost
-            } else {
-                // Fall back to subnet discovery
-                _isScanning.value = true
-                try {
-                    val discovered = scanNetwork(
-                        cameraClient = this@CameraClient,
-                        storage = storage ?: AppStorage(),
-                        onScanState = { _discoveryState.value = it },
-                        onScanning = { _isScanning.value = it }
-                    )
-                    if (discovered == null) {
-                        val err = "No camera found on the local network."
-                        _connectionState.value = CameraConnectionState.Error(err)
-                        log(CameraLogLevel.WARN, err)
-                        return@withContext Result.failure(Exception(err))
-                    }
-                    targetHost = discovered
-                } finally {
-                    _isScanning.value = false
-                }
+        val localIp = getLocalIp()
+        val localSubnet = localIp?.substringBeforeLast(".")
+        val isCameraAp = localSubnet == "192.168.42"
+
+        // 1. Determine best candidate host to try first
+        val candidate = explicitHost?.takeIf { it.isNotBlank() }
+            ?: if (isCameraAp) DEFAULT_HOST
+            else storage?.cameraHost?.takeIf { it.substringBeforeLast(".") == localSubnet }
+
+        // 2. Try candidate directly (no disposable probe roundtrip)
+        if (candidate != null) {
+            val result = attemptSession(candidate)
+            if (result.isSuccess) {
+                return@withContext result
             }
+            log(CameraLogLevel.WARN, "Target $candidate was unreachable; scanning subnet...")
         }
 
-        try {
-            _connectionState.value = CameraConnectionState.Connecting(targetHost)
-            connect(targetHost = targetHost)
-            val sessionResponse = startSession()
-            val token = sessionResponse.intParam ?: currentToken.value ?: 0
-            send(msgId = MSG_GET_ALL_SETTINGS, token = token)
-            _connectionState.value = CameraConnectionState.Connected(targetHost, token)
-            Result.success(targetHost)
-        } catch (e: Exception) {
-            val err = e.message ?: e::class.simpleName ?: e.toString()
+        // 3. Fall back: scan subnet
+        _isScanning.value = true
+        val discovered = try {
+            scanNetwork(
+                cameraClient = this@CameraClient,
+                storage = storage ?: AppStorage(),
+                onScanState = { _discoveryState.value = it },
+                onScanning = { _isScanning.value = it }
+            )
+        } finally {
+            _isScanning.value = false
+        } ?: run {
+            val err = "No camera found on the local network."
             _connectionState.value = CameraConnectionState.Error(err)
-            Result.failure(e)
+            log(CameraLogLevel.WARN, err)
+            return@withContext Result.failure(Exception(err))
         }
+
+        // 4. Connect to discovered host
+        return@withContext attemptSession(discovered)
+    }
+
+    private suspend fun attemptSession(targetHost: String): Result<String> = runCatching {
+        _connectionState.value = CameraConnectionState.Connecting(targetHost)
+        connect(targetHost = targetHost)
+        val sessionResponse = startSession()
+        val token = sessionResponse.intParam ?: currentToken.value ?: 0
+        getAllSettings()
+        updateHost(targetHost)
+        _connectionState.value = CameraConnectionState.Connected(targetHost, token)
+        targetHost
+    }.onFailure { e ->
+        disconnectInternal()
+        val err = e.message ?: e::class.simpleName ?: e.toString()
+        _connectionState.value = CameraConnectionState.Error(err)
     }
 
     suspend fun ensureConnected() {
@@ -540,7 +553,7 @@ class CameraClient(
                 log(CameraLogLevel.TX, json.toString())
                 write.writeFully(json.toString().encodeToByteArray())
                 write.flush()
-                withTimeout(timeoutMs) {
+                withTimeout(timeoutMs.milliseconds) {
                     deferred.await()
                 }
             } catch (e: Exception) {
@@ -555,20 +568,6 @@ class CameraClient(
                 }
             }
         }
-    }
-
-    /**
-     * Sends a command with the given msg_id, optional parameter, and token.
-     */
-    suspend fun send(
-        msgId: Int,
-        param: String? = null,
-        token: Int? = currentToken.value,
-        timeoutMs: Long = 5000
-    ): CameraPacket {
-        val effectiveToken = token ?: 0
-        val packet = CameraPacket(msgId = msgId, token = effectiveToken, param = JsonPrimitive(param))
-        return sendPacket(packet, timeoutMs)
     }
 
     /**
@@ -592,9 +591,10 @@ class CameraClient(
     suspend fun stopSession(timeoutMs: Long = 5000): CameraPacket {
         val token = currentToken.value ?: 0
         val packet = CameraPacket(msgId = MSG_STOP_SESSION, token = token)
-        return sendPacket(packet, timeoutMs).also {
-            _currentToken.value = null
-            storage?.authToken = null
+        return try {
+            sendPacket(packet, timeoutMs)
+        } finally {
+            disconnect()
         }
     }
 
