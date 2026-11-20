@@ -66,34 +66,6 @@ data class CameraPacket(
     }
 }
 
-enum class CameraLogLevel {
-    TX,
-    RX,
-    INFO,
-    WARN,
-    ERROR
-}
-
-data class CameraLogEntry(
-    val level: CameraLogLevel,
-    val message: String
-)
-
-data class BatteryInfo(
-    val level: Int = -1,
-    val isCharging: Boolean = false
-) {
-    val displayText: String
-        get() = if (level >= 0) "$level%" else "N/A"
-}
-
-sealed interface CameraConnectionState {
-    data object Disconnected : CameraConnectionState
-    data class Connecting(val host: String) : CameraConnectionState
-    data class Connected(val host: String, val token: Int?) : CameraConnectionState
-    data class Error(val message: String) : CameraConnectionState
-}
-
 /**
  * A classified signal / notification event received from the camera.
  */

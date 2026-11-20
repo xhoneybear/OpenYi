@@ -238,7 +238,7 @@ fun Intro(
                                 val statusTitle = when {
                                     isConnected -> "Camera connected!"
                                     isScanning -> "Scanning network..."
-                                    connectionState is CameraConnectionState.Connecting -> "Connecting..."
+                                    connectionState.isConnecting -> "Connecting..."
                                     connectionState is CameraConnectionState.Error -> "Connection failed"
                                     else -> "Connection has not been checked."
                                 }
@@ -253,21 +253,21 @@ fun Intro(
                                             "Scanning local network..."
                                         }
                                     }
-                                    connectionState is CameraConnectionState.Connecting -> "Establishing session with camera at ${cameraClient.host}..."
+                                    connectionState.isConnecting -> "Establishing session with camera at ${cameraClient.host}..."
                                     connectionState is CameraConnectionState.Error -> (connectionState as CameraConnectionState.Error).message
                                     else -> "Press the button below to connect and verify your camera."
                                 }
 
                                 val statusColor = when {
                                     isConnected -> MaterialTheme.colorScheme.primary
-                                    isScanning || connectionState is CameraConnectionState.Connecting -> MaterialTheme.colorScheme.primary
+                                    isScanning || connectionState.isConnecting -> MaterialTheme.colorScheme.primary
                                     connectionState is CameraConnectionState.Error -> MaterialTheme.colorScheme.error
                                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                                 }
 
                                 val statusBackgroundColor = when {
                                     isConnected -> MaterialTheme.colorScheme.primaryContainer
-                                    isScanning || connectionState is CameraConnectionState.Connecting -> MaterialTheme.colorScheme.surfaceVariant
+                                    isScanning || connectionState.isConnecting -> MaterialTheme.colorScheme.surfaceVariant
                                     connectionState is CameraConnectionState.Error -> MaterialTheme.colorScheme.errorContainer
                                     else -> MaterialTheme.colorScheme.surfaceVariant
                                 }
@@ -289,7 +289,7 @@ fun Intro(
                                             shape = MaterialTheme.shapes.medium
                                         )
                                         .padding(16.dp)
-                                ) {
+                                 ) {
                                     Text(
                                         text = statusTitle,
                                         color = statusColor,
@@ -309,7 +309,7 @@ fun Intro(
                                         )
                                     }
                                     Button(
-                                        enabled = !isScanning && connectionState !is CameraConnectionState.Connecting,
+                                        enabled = !isScanning && !connectionState.isConnecting,
                                         onClick = {
                                             coroutineScope.launch {
                                                 cameraClient.connectAndInitialize(forceReconnect = true)
@@ -326,7 +326,7 @@ fun Intro(
                                         Text(
                                             when {
                                                 isScanning -> "Scanning..."
-                                                connectionState is CameraConnectionState.Connecting -> "Connecting..."
+                                                connectionState.isConnecting -> "Connecting..."
                                                 isConnected -> "Test again"
                                                 else -> "Connect camera"
                                             }

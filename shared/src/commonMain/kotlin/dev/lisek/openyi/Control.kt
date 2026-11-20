@@ -63,22 +63,6 @@ import com.composables.icons.materialsymbols.roundedfilled.Timer_off
 import com.composables.icons.materialsymbols.roundedfilled.Videocam
 import com.composables.icons.materialsymbols.roundedfilled.Warning
 
-enum class TimerDuration(val duration: Int, val icon: ImageVector) {
-    OFF(0, MaterialSymbols.RoundedFilled.Timer_off),
-    S_3(3000, MaterialSymbols.RoundedFilled.Timer_3_alt_1),
-    S_5(5000, MaterialSymbols.RoundedFilled.Timer_5),
-    S_10(10000, MaterialSymbols.RoundedFilled.Timer_10_alt_1);
-    
-    fun next(): TimerDuration {
-        return when (this) {
-            OFF -> S_3
-            S_3 -> S_5
-            S_5 -> S_10
-            S_10 -> OFF
-        }
-    }
-}
-
 @Composable
 fun Control() {
     var playerState by remember { mutableStateOf(RtspPlayerState.Disconnected) }
@@ -91,7 +75,7 @@ fun Control() {
     val cameraClient = remember { CameraClient.shared }
     val isConnected by cameraClient.isConnected.collectAsState()
     val connectionState by cameraClient.connectionState.collectAsState()
-    val isConnecting = connectionState is CameraConnectionState.Connecting
+    val isConnecting = connectionState.isConnecting
     val isRecording by cameraClient.isRecording.collectAsState()
     val sdCardMessage by cameraClient.sdCardAlert.collectAsState()
 
@@ -278,22 +262,7 @@ fun Control() {
                             .background(Color.Black)
                     ) { state ->
                         playerState = state
-                        localErrorMessage = when (state) {
-                            RtspPlayerState.Disconnected,
-                            RtspPlayerState.Buffering,
-                            RtspPlayerState.Playing -> {
-                                null
-                            }
-
-                            RtspPlayerState.Idle,
-                            RtspPlayerState.Error -> {
-                                if (state == RtspPlayerState.Error) {
-                                    "Unable to decode RTSP stream!"
-                                } else {
-                                    "Connection lost. Dismiss to retry."
-                                }
-                            }
-                        }
+                        localErrorMessage = state.errorMessage()
                     }
                 } else {
                     Box(
@@ -305,7 +274,7 @@ fun Control() {
                 }
                 Overlay(cameraClient, playerState)
             }
-            val activeErrorMessage = localErrorMessage ?: (connectionState as? CameraConnectionState.Error)?.message
+            val activeErrorMessage = localErrorMessage ?: connectionState.errorMessage
             activeErrorMessage?.let {
                 statusStrip(
                     icon = MaterialSymbols.RoundedFilled.Warning,

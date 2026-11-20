@@ -27,23 +27,6 @@ expect fun RtspPreview(
     onStateChanged: (RtspPlayerState) -> Unit = {}
 )
 
-enum class RtspPlayerState {
-    Disconnected,
-    Idle,
-    Buffering,
-    Playing,
-    Error;
-    
-    @Composable
-    fun icon(modifier: Modifier = Modifier, tint: Color = Color.White) = when (this) {
-        Disconnected -> Icon(MaterialSymbols.RoundedFilled.Signal_disconnected, null, modifier, tint)
-        Idle -> Icon(MaterialSymbols.RoundedFilled.Android_cell_4_bar_off, null, modifier, tint)
-        Buffering -> DotsPulsing(modifier, tint)
-        Playing -> RecordingIndicator(modifier, tint)
-        Error -> Icon(MaterialSymbols.RoundedFilled.Error, null, modifier, tint)
-    }
-}
-
 @Composable
 fun RecordingIndicator(modifier: Modifier = Modifier, tint: Color = Color.White) {
     val infiniteTransition = rememberInfiniteTransition()

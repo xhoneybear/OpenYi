@@ -15,7 +15,7 @@ class SharedCommonTest {
 
         assertEquals(257, response.msgId)
         assertEquals(0, response.rval)
-        assertEquals("1", response.param)
+        assertEquals("1", response.strParam)
         assertEquals(1, response.intParam)
         assertTrue(response.isSuccess)
     }
@@ -27,7 +27,7 @@ class SharedCommonTest {
 
         assertEquals(3, response.msgId)
         assertEquals(0, response.rval)
-        assertEquals("""[{"camera_clock":"2026-10-25 04:00:00"},{"video_quality":"S.Fine"}]""", response.param)
+        assertEquals("""[{"camera_clock":"2026-10-25 04:00:00"},{"video_quality":"S.Fine"}]""", response.param.toString())
         assertTrue(response.isSuccess)
     }
 
@@ -49,7 +49,7 @@ class SharedCommonTest {
 
         assertEquals(7, response.msgId)
         assertEquals("battery", response.type)
-        assertEquals("\"100\"", response.param)
+        assertEquals("\"100\"", response.param.toString())
         assertEquals("100", response.strParam)
         assertEquals(100, response.intParam)
     }
@@ -177,5 +177,59 @@ class SharedCommonTest {
         assertEquals(85, charged.level)
         assertTrue(charged.isCharging)
         assertEquals("85%", charged.displayText)
+    }
+
+    @Test
+    fun testBatteryLevelMapping() {
+        assertEquals(BatteryLevel.B_100, BatteryLevel.fromLevel(100))
+        assertEquals(BatteryLevel.B_90, BatteryLevel.fromLevel(95))
+        assertEquals(BatteryLevel.B_80, BatteryLevel.fromLevel(85))
+        assertEquals(BatteryLevel.B_60, BatteryLevel.fromLevel(70))
+        assertEquals(BatteryLevel.B_50, BatteryLevel.fromLevel(55))
+        assertEquals(BatteryLevel.B_30, BatteryLevel.fromLevel(40))
+        assertEquals(BatteryLevel.B_20, BatteryLevel.fromLevel(25))
+        assertEquals(BatteryLevel.B_0, BatteryLevel.fromLevel(10))
+        assertEquals(BatteryLevel.UNKNOWN, BatteryLevel.fromLevel(-1))
+    }
+
+    @Test
+    fun testTimerDurationCycle() {
+        assertEquals(TimerDuration.S_3, TimerDuration.OFF.next())
+        assertEquals(TimerDuration.S_5, TimerDuration.S_3.next())
+        assertEquals(TimerDuration.S_10, TimerDuration.S_5.next())
+        assertEquals(TimerDuration.OFF, TimerDuration.S_10.next())
+    }
+
+    @Test
+    fun testRtspPlayerStateErrorMapping() {
+        assertEquals("Unable to decode RTSP stream!", RtspPlayerState.Error.errorMessage())
+        assertEquals("Connection lost. Dismiss to retry.", RtspPlayerState.Idle.errorMessage())
+        assertNull(RtspPlayerState.Playing.errorMessage())
+        assertNull(RtspPlayerState.Buffering.errorMessage())
+        assertNull(RtspPlayerState.Disconnected.errorMessage())
+    }
+
+    @Test
+    fun testCameraConnectionStateProperties() {
+        val disconnected = CameraConnectionState.Disconnected
+        assertFalse(disconnected.isConnected)
+        assertFalse(disconnected.isConnecting)
+        assertNull(disconnected.errorMessage)
+
+        val connecting = CameraConnectionState.Connecting("192.168.42.1")
+        assertFalse(connecting.isConnected)
+        assertTrue(connecting.isConnecting)
+        assertEquals("192.168.42.1", connecting.host)
+
+        val connected = CameraConnectionState.Connected("192.168.42.1", 1)
+        assertTrue(connected.isConnected)
+        assertFalse(connected.isConnecting)
+        assertEquals("192.168.42.1", connected.host)
+        assertEquals(1, connected.token)
+
+        val error = CameraConnectionState.Error("Connection failed")
+        assertFalse(error.isConnected)
+        assertFalse(error.isConnecting)
+        assertEquals("Connection failed", error.errorMessage)
     }
 }
