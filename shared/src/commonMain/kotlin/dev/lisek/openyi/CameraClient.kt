@@ -97,42 +97,78 @@ sealed interface CameraConnectionState {
 /**
  * A classified signal / notification event received from the camera.
  */
-data class CameraSignal(
-    val type: String,
-    val param: String?,
-    val rawResponse: CameraPacket
-)
+sealed interface CameraSignal {
+    data class Battery(
+        val level: Int?,
+        val isCharging: Boolean
+    ) : CameraSignal
 
-/**
- * Dispatcher that classifies incoming signals by `type` and invokes
- * corresponding functions with the parameter from the `param` block.
- */
-open class CameraSignalDispatcher {
-    open fun onSignal(type: String, param: String?, rawResponse: CameraPacket) {
-        when (type) {
-            "battery" -> onBattery(param)
-            "adapter" -> onAdapter(param)
-            "adapter_status" -> onAdapterStatus(param)
-            "sd_card_status" -> onSdCardStatus(param)
-            "photo_taken" -> onPhotoTaken(param)
-            "video_record_complete" -> onVideoRecordComplete(param)
-            "start_video_record" -> onStartVideoRecord(param)
-            "vf_start" -> onVfStart(param)
-            "vf_stop" -> onVfStop(param)
-            else -> onCustomSignal(type, param)
+    data class AdapterStatus(
+        val isCharging: Boolean
+    ) : CameraSignal
+
+    data class SdCardStatus(
+        val status: String
+    ) : CameraSignal
+
+    data class PhotoTaken(
+        val path: String
+    ) : CameraSignal
+
+    data class VideoRecord(
+        val isRecording: Boolean
+    ) : CameraSignal
+
+    data class Viewfinder(
+        val active: Boolean
+    ) : CameraSignal
+
+    data class Custom(
+        val type: String,
+        val param: String?
+    ) : CameraSignal
+
+    companion object {
+        fun from(response: CameraPacket): CameraSignal? {
+            val type = response.type ?: return null
+            val param = response.strParam
+            return when (type) {
+                "battery" -> Battery(
+                    level = param?.toIntOrNull(),
+                    isCharging = false
+                )
+                "adapter" -> Battery(
+                    level = param?.toIntOrNull(),
+                    isCharging = true
+                )
+                "adapter_status" -> AdapterStatus(
+                    isCharging = param == "1"
+                )
+                "sd_card_status" -> SdCardStatus(
+                    status = param.orEmpty()
+                )
+                "photo_taken" -> PhotoTaken(
+                    path = param.orEmpty()
+                )
+                "start_video_record" -> VideoRecord(
+                    isRecording = true
+                )
+                "video_record_complete" -> VideoRecord(
+                    isRecording = false
+                )
+                "vf_start" -> Viewfinder(
+                    active = true
+                )
+                "vf_stop" -> Viewfinder(
+                    active = false
+                )
+                else -> Custom(
+                    type = type,
+                    param = param
+                )
+            }
         }
     }
-
-    open fun onBattery(param: String?) {}
-    open fun onAdapter(param: String?) {}
-    open fun onAdapterStatus(param: String?) {}
-    open fun onSdCardStatus(param: String?) {}
-    open fun onPhotoTaken(param: String?) {}
-    open fun onVideoRecordComplete(param: String?) {}
-    open fun onStartVideoRecord(param: String?) {}
-    open fun onVfStart(param: String?) {}
-    open fun onVfStop(param: String?) {}
-    open fun onCustomSignal(type: String, param: String?) {}
 }
 
 /**
@@ -291,21 +327,8 @@ class CameraClient(
     private val _signals = MutableSharedFlow<CameraSignal>(extraBufferCapacity = 64)
     val signals: SharedFlow<CameraSignal> = _signals.asSharedFlow()
 
-    var signalDispatcher: CameraSignalDispatcher? = null
-
-    private val typeHandlers = mutableMapOf<String, (String?) -> Unit>()
-    private val anySignalHandlers = mutableListOf<(String, String?) -> Unit>()
-
     private val pendingRequests = mutableMapOf<Int, CompletableDeferred<CameraPacket>>()
     private var genericPendingRequest: CompletableDeferred<CameraPacket>? = null
-
-    fun onSignal(type: String, handler: (param: String?) -> Unit) {
-        typeHandlers[type] = handler
-    }
-
-    fun onAnySignal(handler: (type: String, param: String?) -> Unit) {
-        anySignalHandlers.add(handler)
-    }
 
     suspend fun connect(targetHost: String = host, targetPort: Int = port) {
         connectionMutex.withLock {
@@ -414,42 +437,35 @@ class CameraClient(
         _responses.tryEmit(response)
 
         // Type classification dispatch for signals
-        val type = response.type
-        if (type != null) {
-            val param = response.strParam
-            when (type) {
-                "battery" -> {
-                    val lvl = param?.toIntOrNull() ?: _batteryInfo.value.level
-                    _batteryInfo.value = _batteryInfo.value.copy(level = lvl, isCharging = false)
+        val signal = CameraSignal.from(response)
+        if (signal != null) {
+            when (signal) {
+                is CameraSignal.Battery -> {
+                    val lvl = signal.level ?: _batteryInfo.value.level
+                    _batteryInfo.value = _batteryInfo.value.copy(
+                        level = lvl,
+                        isCharging = signal.isCharging
+                    )
                 }
-                "adapter" -> {
-                    val lvl = param?.toIntOrNull() ?: _batteryInfo.value.level
-                    _batteryInfo.value = _batteryInfo.value.copy(level = lvl, isCharging = true)
+                is CameraSignal.AdapterStatus -> {
+                    _batteryInfo.value = _batteryInfo.value.copy(isCharging = signal.isCharging)
                 }
-                "adapter_status" -> {
-                    _batteryInfo.value = _batteryInfo.value.copy(isCharging = param == "1")
-                }
-                "sd_card_status" -> {
-                    if (param == "STORAGE_FULL") {
+                is CameraSignal.SdCardStatus -> {
+                    if (signal.status == "STORAGE_FULL") {
                         _sdCardAlert.value = "SD card full. Please free up space."
-                    } else if (param == "LOW_SPEED_CARD") {
+                    } else if (signal.status == "LOW_SPEED_CARD") {
                         _sdCardAlert.value = "SD card slow. Quality may be affected."
                     }
                 }
-                "start_video_record" -> {
-                    _isRecording.value = true
+                is CameraSignal.VideoRecord -> {
+                    _isRecording.value = signal.isRecording
                 }
-                "video_record_complete" -> {
-                    _isRecording.value = false
+                else -> {
+                    log(CameraLogLevel.INFO, "Received unhandled signal: $signal")
                 }
             }
 
-            val signal = CameraSignal(type, param, response)
             _signals.tryEmit(signal)
-
-            signalDispatcher?.onSignal(type, param, response)
-            typeHandlers[type]?.invoke(param)
-            anySignalHandlers.forEach { it.invoke(type, param) }
         }
 
         if (msgId != null && pendingRequests.containsKey(msgId)) {

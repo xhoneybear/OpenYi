@@ -108,42 +108,50 @@ class SharedCommonTest {
     }
 
     @Test
-    fun testSignalDispatcherClassification() {
-        var batteryParam: String? = null
-        var photoTakenParam: String? = null
-        var customType: String? = null
-        var customParam: String? = null
-
-        val dispatcher = object : CameraSignalDispatcher() {
-            override fun onBattery(param: String?) {
-                batteryParam = param
-            }
-
-            override fun onPhotoTaken(param: String?) {
-                photoTakenParam = param
-            }
-
-            override fun onCustomSignal(type: String, param: String?) {
-                customType = type
-                customParam = param
-            }
-        }
-
+    fun testCameraSignalClassification() {
         // Test battery signal
         val batteryResp = CameraPacket.parse("""{"msg_id":7,"type":"battery","param":"85"}""")
-        dispatcher.onSignal(batteryResp.type!!, batteryResp.strParam, batteryResp)
-        assertEquals("85", batteryParam)
+        val batterySignal = CameraSignal.from(batteryResp)
+        assertTrue(batterySignal is CameraSignal.Battery)
+        assertEquals(85, batterySignal.level)
+        assertFalse(batterySignal.isCharging)
+
+        // Test adapter signal
+        val adapterResp = CameraPacket.parse("""{"msg_id":7,"type":"adapter","param":"100"}""")
+        val adapterSignal = CameraSignal.from(adapterResp)
+        assertTrue(adapterSignal is CameraSignal.Battery)
+        assertEquals(100, adapterSignal.level)
+        assertTrue(adapterSignal.isCharging)
+
+        // Test adapter status signal
+        val adapterStatusResp = CameraPacket.parse("""{"msg_id":7,"type":"adapter_status","param":"1"}""")
+        val adapterStatusSignal = CameraSignal.from(adapterStatusResp)
+        assertTrue(adapterStatusSignal is CameraSignal.AdapterStatus)
+        assertTrue(adapterStatusSignal.isCharging)
 
         // Test photo_taken signal
         val photoResp = CameraPacket.parse("""{"msg_id":7,"type":"photo_taken","param":"/tmp/fuse_d/DCIM/100MEDIA/YDXJ0001.jpg"}""")
-        dispatcher.onSignal(photoResp.type!!, photoResp.strParam, photoResp)
-        assertEquals("/tmp/fuse_d/DCIM/100MEDIA/YDXJ0001.jpg", photoTakenParam)
+        val photoSignal = CameraSignal.from(photoResp)
+        assertTrue(photoSignal is CameraSignal.PhotoTaken)
+        assertEquals("/tmp/fuse_d/DCIM/100MEDIA/YDXJ0001.jpg", photoSignal.path)
+
+        // Test video recording signals
+        val startRecordResp = CameraPacket.parse("""{"msg_id":7,"type":"start_video_record"}""")
+        val startRecordSignal = CameraSignal.from(startRecordResp)
+        assertTrue(startRecordSignal is CameraSignal.VideoRecord)
+        assertTrue(startRecordSignal.isRecording)
+
+        val stopRecordResp = CameraPacket.parse("""{"msg_id":7,"type":"video_record_complete"}""")
+        val stopRecordSignal = CameraSignal.from(stopRecordResp)
+        assertTrue(stopRecordSignal is CameraSignal.VideoRecord)
+        assertFalse(stopRecordSignal.isRecording)
 
         // Test custom signal
         val customResp = CameraPacket.parse("""{"type":"custom_mode","param":"timelapse"}""")
-        dispatcher.onSignal(customResp.type!!, customResp.strParam, customResp)
-        assertEquals("custom_mode", customType)
-        assertEquals("timelapse", customParam)
+        val customSignal = CameraSignal.from(customResp)
+        assertTrue(customSignal is CameraSignal.Custom)
+        assertEquals("custom_mode", customSignal.type)
+        assertEquals("timelapse", customSignal.param)
     }
 
     @Test
