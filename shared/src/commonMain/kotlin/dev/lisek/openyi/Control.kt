@@ -50,9 +50,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import com.composables.icons.materialsymbols.MaterialSymbols
 import com.composables.icons.materialsymbols.roundedfilled.Close
-import com.composables.icons.materialsymbols.roundedfilled.Link_off
 import com.composables.icons.materialsymbols.roundedfilled.Photo_camera
-import com.composables.icons.materialsymbols.roundedfilled.Refresh
 import com.composables.icons.materialsymbols.roundedfilled.Sd_card_alert
 import com.composables.icons.materialsymbols.roundedfilled.Sensors
 import com.composables.icons.materialsymbols.roundedfilled.Settings
@@ -64,43 +62,20 @@ import com.composables.icons.materialsymbols.roundedfilled.Videocam
 import com.composables.icons.materialsymbols.roundedfilled.Warning
 
 @Composable
-fun Control() {
+fun Control(onSettingsClick: () -> Unit) {
     var playerState by remember { mutableStateOf(RtspPlayerState.Disconnected) }
     var timer by remember { mutableStateOf(TimerDuration.OFF) }
     var recordMode by remember { mutableStateOf(false) }
-    var restartToken by remember { mutableStateOf(0) }
     var localErrorMessage by remember { mutableStateOf<String?>(null) }
 
-    val coroutineScope = rememberCoroutineScope()
     val cameraClient = remember { CameraClient.shared }
-    val isConnected by cameraClient.isConnected.collectAsState()
     val connectionState by cameraClient.connectionState.collectAsState()
-    val isConnecting = connectionState.isConnecting
     val isRecording by cameraClient.isRecording.collectAsState()
     val sdCardMessage by cameraClient.sdCardAlert.collectAsState()
-
-    val debugLogs = remember { mutableStateListOf<CameraLogEntry>() }
-    val scanState by cameraClient.discoveryState.collectAsState()
-    val isScanning by cameraClient.isScanning.collectAsState()
-
-    fun triggerReconnect() {
-        restartToken++
-        localErrorMessage = null
-        coroutineScope.launch {
-            cameraClient.connectAndInitialize(forceReconnect = true)
-        }
-    }
 
     LaunchedEffect(isRecording) {
         if (!isRecording) {
             playerState = RtspPlayerState.Disconnected
-        }
-    }
-
-    // Stream all client logs into the debug log view
-    LaunchedEffect(cameraClient) {
-        cameraClient.logs.collect { entry ->
-            debugLogs.add(0, entry)
         }
     }
 
@@ -123,27 +98,21 @@ fun Control() {
                             .only(WindowInsetsSides.Top)
                     )
             ) {
-                Row(Modifier.weight(1f)) {}
+                Row(Modifier.size(48.dp)) {}
                 Text(
                     text = "OpenYi",
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onPrimary,
                     style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.weight(1f)
                 )
-                Row (
-                    horizontalArrangement = Arrangement.End,
-                    modifier = Modifier.weight(1f)
+                IconButton(
+                    onClick = { onSettingsClick() },
                 ) {
-                    IconButton(
-                        onClick = { /* Handle settings click */ }
-                    ) {
-                        Icon(
-                            imageVector = MaterialSymbols.RoundedFilled.Settings,
-                            contentDescription = "Settings",
-                            tint = MaterialTheme.colorScheme.onPrimary
-                        )
-                    }
+                    Icon(
+                        imageVector = MaterialSymbols.RoundedFilled.Settings,
+                        contentDescription = "Settings",
+                        tint = MaterialTheme.colorScheme.onPrimary
+                    )
                 }
             }
         },
@@ -255,7 +224,6 @@ fun Control() {
                 if (isRecording) {
                     RtspPreview(
                         url = "rtsp://$cameraHost:554/live",
-                        restartToken = restartToken,
                         modifier = Modifier
                             .fillMaxWidth()
                             .aspectRatio(16f / 9f)
@@ -278,11 +246,11 @@ fun Control() {
             activeErrorMessage?.let {
                 statusStrip(
                     icon = MaterialSymbols.RoundedFilled.Warning,
-                    dismissIcon = MaterialSymbols.RoundedFilled.Refresh,
+                    dismissIcon = MaterialSymbols.RoundedFilled.Close,
                     message = it,
                     tint = MaterialTheme.colorScheme.errorContainer,
                 ) {
-                    triggerReconnect()
+                    localErrorMessage = null
                 }
             }
             sdCardMessage?.let {
@@ -295,152 +263,7 @@ fun Control() {
                     cameraClient.clearSdCardAlert()
                 }
             }
-
-            // Connection Debug & Log View
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // Header with status indicator and quick actions
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(10.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    when {
-                                        isConnected -> Color(0xFF4CAF50)
-                                        isConnecting -> Color(0xFFFF9800)
-                                        else -> MaterialTheme.colorScheme.error
-                                    }
-                                )
-                        )
-                        Text(
-                            text = when {
-                                isConnected -> "Connected"
-                                isConnecting -> "Connecting..."
-                                else -> "Disconnected"
-                            },
-                            style = MaterialTheme.typography.titleSmall,
-                            color = when {
-                                isConnected -> Color(0xFF2E7D32)
-                                isConnecting -> Color(0xFFE65100)
-                                else -> MaterialTheme.colorScheme.error
-                            }
-                        )
-                        Text(
-                            text = "(${cameraClient.host}:${cameraClient.port})",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        IconButton(
-                            onClick = {
-                                coroutineScope.launch {
-                                    runCatching { cameraClient.stopSession() }
-                                }
-                            },
-                            enabled = isConnected && !isConnecting,
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = MaterialSymbols.RoundedFilled.Link_off,
-                                contentDescription = "Stop Session",
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        IconButton(
-                            onClick = { triggerReconnect() },
-                            enabled = !isConnecting,
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Icon(
-                                imageVector = MaterialSymbols.RoundedFilled.Refresh,
-                                contentDescription = "Reconnect",
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                }
-
-                if (isScanning && scanState is DiscoveryState.Scanning) {
-                    val scan = scanState as DiscoveryState.Scanning
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.surfaceVariant, shape = MaterialTheme.shapes.small)
-                            .padding(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        LinearProgressIndicator(
-                            progress = { scan.progress },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Text(
-                            text = "Scanning ${scan.currentIp.ifBlank { "network" }} (${scan.checkedCount}/${scan.totalCount})...",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                    }
-                }
-
-                // Log entries list
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    items(debugLogs) { entry ->
-                        val badgeColor = when (entry.level) {
-                            CameraLogLevel.INFO -> MaterialTheme.colorScheme.primary
-                            CameraLogLevel.TX -> Color(0xFF00838F)
-                            CameraLogLevel.RX -> Color(0xFF2E7D32)
-                            CameraLogLevel.WARN -> Color(0xFFE65100)
-                            CameraLogLevel.ERROR -> MaterialTheme.colorScheme.error
-                        }
-                        val containerColor = badgeColor.copy(alpha = 0.12f)
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(containerColor, shape = MaterialTheme.shapes.small)
-                                .padding(8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            Text(
-                                text = "[${entry.level.name}]",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = badgeColor,
-                                fontFamily = FontFamily.Monospace
-                            )
-                            Text(
-                                text = entry.message,
-                                style = MaterialTheme.typography.bodySmall,
-                                fontFamily = FontFamily.Monospace,
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-                }
-            }
+            ConnectionStrip()
         }
     }
 }

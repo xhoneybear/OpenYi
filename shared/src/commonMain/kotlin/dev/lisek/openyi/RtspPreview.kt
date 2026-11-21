@@ -22,7 +22,6 @@ import com.composables.icons.materialsymbols.roundedfilled.Signal_disconnected
 @Composable
 expect fun RtspPreview(
     url: String,
-    restartToken: Int = 0,
     modifier: Modifier = Modifier,
     onStateChanged: (RtspPlayerState) -> Unit = {}
 )

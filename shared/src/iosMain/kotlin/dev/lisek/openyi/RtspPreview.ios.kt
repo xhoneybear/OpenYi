@@ -25,7 +25,6 @@ object NativeRtspPlayerRegistry {
 @Composable
 actual fun RtspPreview(
     url: String,
-    restartToken: Int,
     modifier: Modifier,
     onStateChanged: (RtspPlayerState) -> Unit
 ) {
@@ -40,7 +39,7 @@ actual fun RtspPreview(
         return
     }
 
-    key(url, restartToken) {
+    key(url) {
         UIKitView(
             modifier = modifier,
             factory = { provider.createView(url, onStateChanged) },

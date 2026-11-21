@@ -16,13 +16,12 @@ import androidx.media3.ui.PlayerView
 @Composable
 actual fun RtspPreview(
     url: String,
-    restartToken: Int,
     modifier: Modifier,
     onStateChanged: (RtspPlayerState) -> Unit
 ) {
     val context = LocalContext.current
     val currentOnStateChanged = rememberUpdatedState(onStateChanged)
-    val player = remember(url, restartToken) {
+    val player = remember(url) {
         ExoPlayer.Builder(context).build().also { exoPlayer ->
             exoPlayer.addListener(object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {

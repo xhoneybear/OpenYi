@@ -51,7 +51,14 @@ fun App() {
                 })
             }
             composable("control") {
-                Control()
+                Control(onSettingsClick = {
+                    navController.navigate("log")
+                })
+            }
+            composable("log") {
+                LogView(onBackPressed = {
+                    navController.popBackStack()
+                })
             }
             composable("settings") {
                 Settings()
