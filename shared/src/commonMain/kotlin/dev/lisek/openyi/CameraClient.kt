@@ -224,20 +224,6 @@ class CameraClient(
         const val DEFAULT_HOST = "192.168.42.1"
         const val DEFAULT_PORT = 7878
 
-        const val MSG_GET_SETTING = 1
-        const val MSG_SET_SETTING = 2
-        const val MSG_GET_ALL_SETTINGS = 3
-        const val MSG_FORMAT_SD = 4
-        const val MSG_GET_SD_STATUS = 5
-        const val MSG_GET_SETTING_CHOICES = 9
-        const val MSG_GET_BATTERY = 13
-        const val MSG_START_SESSION = 257
-        const val MSG_STOP_SESSION = 258
-        const val MSG_START_RECORD = 513
-        const val MSG_STOP_RECORD = 514
-        const val MSG_TAKE_PHOTO = 769
-        const val MSG_TERMINATE_CONNECTION = 1793
-
         val shared: CameraClient by lazy {
             val s = AppStorage()
             CameraClient(host = s.cameraHost, storage = s)
