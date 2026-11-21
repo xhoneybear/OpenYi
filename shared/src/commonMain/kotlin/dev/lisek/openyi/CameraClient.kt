@@ -520,6 +520,7 @@ class CameraClient(
         val sessionResponse = startSession()
         val token = sessionResponse.intParam ?: currentToken.value ?: 0
         getAllSettings()
+        getBatteryInfo()
         updateHost(targetHost)
         _connectionState.value = CameraConnectionState.Connected(targetHost, token)
         targetHost
@@ -605,6 +606,15 @@ class CameraClient(
     suspend fun getAllSettings(timeoutMs: Long = 10000): CameraPacket {
         val token = currentToken.value ?: 0
         val packet = CameraPacket(msgId = MSG_GET_ALL_SETTINGS, token = token)
+        return sendPacket(packet, timeoutMs)
+    }
+    
+    /**
+     * Sends `{"msg_id":13,"token":<token>}` to get the current battery info.
+     */
+    suspend fun getBatteryInfo(timeoutMs: Long = 5000): CameraPacket {
+        val token = currentToken.value ?: 0
+        val packet = CameraPacket(msgId = MSG_GET_BATTERY, token = token)
         return sendPacket(packet, timeoutMs)
     }
 }
