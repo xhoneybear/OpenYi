@@ -264,6 +264,7 @@ fun Control(onSettingsClick: () -> Unit) {
                 }
             }
             ConnectionStrip()
+            Gallery()
         }
     }
 }
