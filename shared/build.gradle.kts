@@ -42,9 +42,9 @@ kotlin {
     
     sourceSets {
         androidMain.dependencies {
-            implementation(libs.coil.network.okhttp)
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.compose.uiTooling)
+            implementation(libs.ktor.client.android)
             implementation(libs.media3.exoplayer)
             implementation(libs.media3.exoplayer.rtsp)
             implementation(libs.media3.ui)
@@ -54,6 +54,7 @@ kotlin {
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.navigation.compose)
             implementation(libs.coil.compose)
+            implementation(libs.coil.network.ktor3)
             implementation(libs.compose.components.resources)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material.symbols.rounded.filled)
@@ -67,6 +68,9 @@ kotlin {
             implementation(libs.russhwolf.settings)
             implementation(libs.russhwolf.settings.coroutines)
             implementation(libs.russhwolf.settings.no.arg)
+        }
+        iosMain.dependencies {
+            implementation(libs.ktor.client.darwin)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
