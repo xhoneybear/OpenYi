@@ -20,6 +20,8 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.composables.icons.materialsymbols.MaterialSymbols
 import com.composables.icons.materialsymbols.roundedfilled.Image
+import com.composables.icons.materialsymbols.roundedfilled.Play_circle
+import com.composables.icons.materialsymbols.roundedfilled.Video_camera_back
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
@@ -37,6 +39,12 @@ fun Gallery() {
     ) {
         items(galleryItems.entries.toList(), key = { it.key }) { (media, thumbnail) ->
             val file = "http://${cameraClient.host}/DCIM/101MEDIA/$thumbnail"
+            val icon = if (media.endsWith(".MP4", ignoreCase = true)) {
+                MaterialSymbols.RoundedFilled.Video_camera_back
+            } else {
+                MaterialSymbols.RoundedFilled.Image
+            }
+
             Box(
                 modifier = Modifier
                     .aspectRatio(1f)
@@ -47,7 +55,7 @@ fun Gallery() {
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Icon(
-                        imageVector = MaterialSymbols.RoundedFilled.Image,
+                        imageVector = icon,
                         contentDescription = "Image placeholder",
                         tint = Color.Gray.copy(alpha = 0.1f),
                         modifier = Modifier.size(48.dp)
@@ -71,6 +79,17 @@ fun Gallery() {
                         )
                     }
                 )
+                if (media.endsWith(".MP4", ignoreCase = true)) {
+                    Icon(
+                        imageVector = MaterialSymbols.RoundedFilled.Play_circle,
+                        contentDescription = "Video indicator",
+                        tint = Color.White.copy(alpha = 0.8f),
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(4.dp)
+                            .size(16.dp)
+                    )
+                }
             }
         }
     }
