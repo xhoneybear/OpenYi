@@ -607,4 +607,13 @@ class CameraClient(
         val packet = CameraPacket(msgId = MSG_GET_BATTERY, token = token)
         return sendPacket(packet, timeoutMs)
     }
+
+    /**
+     * Sends `{"msg_id":1282,"token":<token>,"param":"<path>"}` to list files in a directory.
+     */
+    suspend fun listFiles(path: String, timeoutMs: Long = 10000): CameraPacket {
+        val token = currentToken.value ?: 0
+        val packet = CameraPacket(msgId = MSG_LIST_FILES, token = token, param = JsonPrimitive(path))
+        return sendPacket(packet, timeoutMs)
+    }
 }
