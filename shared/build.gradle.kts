@@ -42,6 +42,7 @@ kotlin {
     
     sourceSets {
         androidMain.dependencies {
+            implementation(libs.coil.network.okhttp)
             implementation(libs.compose.uiToolingPreview)
             implementation(libs.compose.uiTooling)
             implementation(libs.media3.exoplayer)
@@ -52,6 +53,7 @@ kotlin {
             implementation(libs.androidx.lifecycle.runtimeCompose)
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.navigation.compose)
+            implementation(libs.coil.compose)
             implementation(libs.compose.components.resources)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material.symbols.rounded.filled)
