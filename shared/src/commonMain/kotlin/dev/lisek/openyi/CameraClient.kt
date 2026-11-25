@@ -31,6 +31,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonPrimitive
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -41,10 +42,13 @@ import kotlin.time.Duration.Companion.milliseconds
 data class CameraPacket(
     @SerialName("msg_id")
     val msgId: Int? = null,
+    val token: Int? = null,
     val rval: Int? = null,
     val param: JsonElement? = null,
-    val token: Int? = null,
-    val type: String? = null
+    val type: String? = null,
+    val permission: String? = null,
+    val options: JsonElement? = null,
+    val listing: JsonElement? = null
 ) {
     val isSuccess: Boolean
         get() = rval == 0
