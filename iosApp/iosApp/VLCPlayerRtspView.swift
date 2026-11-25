@@ -6,13 +6,15 @@ import Darwin
 final class VLCPlayerRtspView: UIView, VLCMediaPlayerDelegate {
     private var mediaPlayer: VLCMediaPlayer?
     private let urlString: String
+    private let isLiveStream: Bool
     private let onStateChanged: (RtspPlayerState) -> Void
     private var isPlayerStarted = false
     private var hasReportedPlaying = false
     private let videoView = UIView()
 
-    init(url: String, onStateChanged: @escaping (RtspPlayerState) -> Void) {
+    init(url: String, isLiveStream: Bool = true, onStateChanged: @escaping (RtspPlayerState) -> Void) {
         self.urlString = url
+        self.isLiveStream = isLiveStream
         self.onStateChanged = onStateChanged
         super.init(frame: .zero)
 
@@ -21,6 +23,25 @@ final class VLCPlayerRtspView: UIView, VLCMediaPlayerDelegate {
         videoView.backgroundColor = .black
         videoView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         addSubview(videoView)
+
+        if !isLiveStream {
+            let tap = UITapGestureRecognizer(target: self, action: #selector(togglePlayPause))
+            addGestureRecognizer(tap)
+        }
+    }
+
+    @objc private func togglePlayPause() {
+        guard let player = mediaPlayer else { return }
+        if player.isPlaying {
+            player.pause()
+        } else if player.state == .ended || player.state == .stopped {
+            if let streamUrl = URL(string: urlString) {
+                player.media = VLCMedia(url: streamUrl)
+            }
+            player.play()
+        } else {
+            player.play()
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -45,11 +66,11 @@ final class VLCPlayerRtspView: UIView, VLCMediaPlayerDelegate {
             return
         }
 
-        if let host = streamUrl.host {
+        if isLiveStream, let host = streamUrl.host {
             configureLive555Interface(forHost: host)
         }
 
-        let library = VLCLibrary(options: ["--no-audio"])
+        let library = isLiveStream ? VLCLibrary(options: ["--no-audio"]) : VLCLibrary()
         library.debugLogging = false
 
         let player = VLCMediaPlayer(library: library)
@@ -57,11 +78,13 @@ final class VLCPlayerRtspView: UIView, VLCMediaPlayerDelegate {
         player.delegate = self
 
         let media = VLCMedia(url: streamUrl)
-        media.addOption(":network-caching=200")
-        media.addOption(":live-caching=200")
-        media.addOption(":clock-jitter=0")
-        media.addOption(":clock-synchro=0")
-        media.addOption(":no-audio")
+        if isLiveStream {
+            media.addOption(":network-caching=200")
+            media.addOption(":live-caching=200")
+            media.addOption(":clock-jitter=0")
+            media.addOption(":clock-synchro=0")
+            media.addOption(":no-audio")
+        }
 
         player.media = media
         player.play()
@@ -193,7 +216,11 @@ final class VLCPlayerRtspView: UIView, VLCMediaPlayerDelegate {
 
 final class VLCPlayerViewProvider: NativeRtspViewProvider {
     func createView(url: String, onStateChanged: @escaping (RtspPlayerState) -> Void) -> UIView {
-        VLCPlayerRtspView(url: url, onStateChanged: onStateChanged)
+        VLCPlayerRtspView(url: url, isLiveStream: true, onStateChanged: onStateChanged)
+    }
+
+    func createVideoView(url: String, onStateChanged: @escaping (RtspPlayerState) -> Void) -> UIView {
+        VLCPlayerRtspView(url: url, isLiveStream: false, onStateChanged: onStateChanged)
     }
 
     func releaseView(view: UIView) {

@@ -1,6 +1,7 @@
 package dev.lisek.openyi
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -27,7 +28,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 
 @Composable
-fun Gallery() {
+fun Gallery(onClickMedia: (String) -> Unit = {}) {
     val cameraClient = CameraClient.shared
     val galleryItems = getGalleryItems()
 
@@ -48,7 +49,8 @@ fun Gallery() {
             Box(
                 modifier = Modifier
                     .aspectRatio(1f)
-                    .background(Color.Gray.copy(alpha = 0.1f)),
+                    .background(Color.Gray.copy(alpha = 0.1f))
+                    .clickable { onClickMedia(media) },
                 contentAlignment = Alignment.Center
             ) {
                 Column(

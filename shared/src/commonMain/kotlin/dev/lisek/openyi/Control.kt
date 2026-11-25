@@ -66,6 +66,7 @@ fun Control(onSettingsClick: () -> Unit) {
     var playerState by remember { mutableStateOf(RtspPlayerState.Disconnected) }
     var timer by remember { mutableStateOf(TimerDuration.OFF) }
     var recordMode by remember { mutableStateOf(false) }
+    var currentMedia by remember { mutableStateOf<String?>(null) }
     var localErrorMessage by remember { mutableStateOf<String?>(null) }
 
     val cameraClient = remember { CameraClient.shared }
@@ -84,187 +85,197 @@ fun Control(onSettingsClick: () -> Unit) {
         cameraClient.connectAndInitialize(forceReconnect = false)
     }
 
-    Scaffold(
-        topBar = {
-            Row(
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.primary)
-                    .windowInsetsPadding(
-                        WindowInsets
-                            .safeContent
-                            .only(WindowInsetsSides.Top)
-                    )
-            ) {
-                Row(Modifier.size(48.dp)) {}
-                Text(
-                    text = "OpenYi",
-                    textAlign = TextAlign.Center,
-                    color = MaterialTheme.colorScheme.onPrimary,
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                IconButton(
-                    onClick = { onSettingsClick() },
+    Box {
+        Scaffold(
+            topBar = {
+                Row(
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.primary)
+                        .windowInsetsPadding(
+                            WindowInsets
+                                .safeContent
+                                .only(WindowInsetsSides.Top)
+                        )
                 ) {
-                    Icon(
-                        imageVector = MaterialSymbols.RoundedFilled.Settings,
-                        contentDescription = "Settings",
-                        tint = MaterialTheme.colorScheme.onPrimary
+                    Row(Modifier.size(48.dp)) {}
+                    Text(
+                        text = "OpenYi",
+                        textAlign = TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        style = MaterialTheme.typography.titleMedium,
                     )
+                    IconButton(
+                        onClick = { onSettingsClick() },
+                    ) {
+                        Icon(
+                            imageVector = MaterialSymbols.RoundedFilled.Settings,
+                            contentDescription = "Settings",
+                            tint = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
                 }
-            }
-        },
-        bottomBar = {
-            Row(
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 8.dp)
-                    .windowInsetsPadding(
-                        WindowInsets
-                            .safeContent
-                            .only(WindowInsetsSides.Bottom)
-                    )
-            ) {
+            },
+            bottomBar = {
                 Row(
                     horizontalArrangement = Arrangement.Center,
                     verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                        .windowInsetsPadding(
+                            WindowInsets
+                                .safeContent
+                                .only(WindowInsetsSides.Bottom)
+                        )
                 ) {
                     Row(
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
-                            .clickable { recordMode = !recordMode }
+                        modifier = Modifier.weight(1f)
                     ) {
-                        Icon(
-                            imageVector = MaterialSymbols.RoundedFilled.Photo_camera,
-                            contentDescription = "Photo Mode",
-                            tint = MaterialTheme.colorScheme.onBackground,
+                        Row(
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
-                                .background(
-                                    if (recordMode) {
-                                        MaterialTheme.colorScheme.surfaceVariant
+                                .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                                .clickable { recordMode = !recordMode }
+                        ) {
+                            Icon(
+                                imageVector = MaterialSymbols.RoundedFilled.Photo_camera,
+                                contentDescription = "Photo Mode",
+                                tint = MaterialTheme.colorScheme.onBackground,
+                                modifier = Modifier
+                                    .background(
+                                        if (recordMode) {
+                                            MaterialTheme.colorScheme.surfaceVariant
+                                        } else {
+                                            MaterialTheme.colorScheme.primary
+                                        },
+                                        CircleShape
+                                    )
+                                    .padding(8.dp)
+                            )
+                            Icon(
+                                imageVector = MaterialSymbols.RoundedFilled.Videocam,
+                                contentDescription = "Video Mode",
+                                tint = MaterialTheme.colorScheme.onBackground,
+                                modifier = Modifier
+                                    .background(
+                                        if (recordMode) {
+                                            MaterialTheme.colorScheme.primary
+                                        } else {
+                                            MaterialTheme.colorScheme.surfaceVariant
+                                        },
+                                        CircleShape
+                                    )
+                                    .padding(8.dp)
+                            )
+                        }
+                    }
+                    Row(
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Row(modifier = Modifier
+                            .size(64.dp)
+                            .border(2.dp, MaterialTheme.colorScheme.onBackground, CircleShape)
+                            .padding(6.dp)
+                        ) {
+                            Button(
+                                modifier = Modifier.fillMaxSize(),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (recordMode) {
+                                        MaterialTheme.colorScheme.error
                                     } else {
                                         MaterialTheme.colorScheme.primary
-                                    },
-                                    CircleShape
-                                )
-                                .padding(8.dp)
-                        )
-                        Icon(
-                            imageVector = MaterialSymbols.RoundedFilled.Videocam,
-                            contentDescription = "Video Mode",
-                            tint = MaterialTheme.colorScheme.onBackground,
+                                    }
+                                ),
+                                shape = CircleShape,
+                                onClick = { /* Handle capture click */ }
+                            ) {}
+                        }
+                    }
+                    Row(
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        IconButton(
+                            onClick = { timer = timer.next() }
+                        ) {
+                            Icon(
+                                imageVector = timer.icon,
+                                contentDescription = "Timer",
+                                tint = MaterialTheme.colorScheme.onBackground
+                            )
+                        }
+                    }
+                }
+            }
+        ) { padding ->
+            Column(modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+            ) {
+                val cameraHost = cameraClient.host
+                Box {
+                    if (isRecording) {
+                        RtspPreview(
+                            url = "rtsp://$cameraHost:554/live",
                             modifier = Modifier
-                                .background(
-                                    if (recordMode) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.surfaceVariant
-                                    },
-                                    CircleShape
-                                )
-                                .padding(8.dp)
+                                .fillMaxWidth()
+                                .aspectRatio(16f / 9f)
+                                .background(Color.Black)
+                        ) { state ->
+                            playerState = state
+                            localErrorMessage = state.errorMessage()
+                        }
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(16f / 9f)
+                                .background(Color.Black)
                         )
                     }
+                    Overlay(cameraClient, playerState)
                 }
-                Row(
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Row(modifier = Modifier
-                        .size(64.dp)
-                        .border(2.dp, MaterialTheme.colorScheme.onBackground, CircleShape)
-                        .padding(6.dp)
+                val activeErrorMessage = localErrorMessage ?: connectionState.errorMessage
+                activeErrorMessage?.let {
+                    statusStrip(
+                        icon = MaterialSymbols.RoundedFilled.Warning,
+                        dismissIcon = MaterialSymbols.RoundedFilled.Close,
+                        message = it,
+                        tint = MaterialTheme.colorScheme.errorContainer,
                     ) {
-                        Button(
-                            modifier = Modifier.fillMaxSize(),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (recordMode) {
-                                    MaterialTheme.colorScheme.error
-                                } else {
-                                    MaterialTheme.colorScheme.primary
-                                }
-                            ),
-                            shape = CircleShape,
-                            onClick = { /* Handle capture click */ }
-                        ) {}
+                        localErrorMessage = null
                     }
                 }
-                Row(
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    IconButton(
-                        onClick = { timer = timer.next() }
+                sdCardMessage?.let {
+                    statusStrip(
+                        icon = MaterialSymbols.RoundedFilled.Sd_card_alert,
+                        dismissIcon = MaterialSymbols.RoundedFilled.Close,
+                        message = it,
+                        tint = Color(255, 240, 215)
                     ) {
-                        Icon(
-                            imageVector = timer.icon,
-                            contentDescription = "Timer",
-                            tint = MaterialTheme.colorScheme.onBackground
-                        )
+                        cameraClient.clearSdCardAlert()
                     }
+                }
+                ConnectionStrip()
+                Gallery {
+                    currentMedia = it
                 }
             }
         }
-    ) { padding ->
-        Column(modifier = Modifier
-            .fillMaxSize()
-            .padding(padding)
-        ) {
-            val cameraHost = cameraClient.host
-            Box {
-                if (isRecording) {
-                    RtspPreview(
-                        url = "rtsp://$cameraHost:554/live",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(16f / 9f)
-                            .background(Color.Black)
-                    ) { state ->
-                        playerState = state
-                        localErrorMessage = state.errorMessage()
-                    }
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(16f / 9f)
-                            .background(Color.Black)
-                    )
-                }
-                Overlay(cameraClient, playerState)
-            }
-            val activeErrorMessage = localErrorMessage ?: connectionState.errorMessage
-            activeErrorMessage?.let {
-                statusStrip(
-                    icon = MaterialSymbols.RoundedFilled.Warning,
-                    dismissIcon = MaterialSymbols.RoundedFilled.Close,
-                    message = it,
-                    tint = MaterialTheme.colorScheme.errorContainer,
-                ) {
-                    localErrorMessage = null
-                }
-            }
-            sdCardMessage?.let {
-                statusStrip(
-                    icon = MaterialSymbols.RoundedFilled.Sd_card_alert,
-                    dismissIcon = MaterialSymbols.RoundedFilled.Close,
-                    message = it,
-                    tint = Color(255, 240, 215)
-                ) {
-                    cameraClient.clearSdCardAlert()
-                }
-            }
-            ConnectionStrip()
-            Gallery()
+        if (currentMedia != null) {
+            MediaViewer(
+                media = currentMedia!!,
+                onClose = { currentMedia = null }
+            )
         }
     }
 }
